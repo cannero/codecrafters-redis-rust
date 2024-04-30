@@ -15,7 +15,6 @@ fn main() {
                 thread::spawn(move ||{
                     handle_connection(stream).unwrap_or_else(|error| eprintln!("{:?}", error));
                 });
-                //write!(stream, "+PONG\r\n").unwrap();
             }
             Err(e) => {
                 println!("error: {}", e);
@@ -28,11 +27,9 @@ fn handle_connection(mut stream: TcpStream) -> Result<(), Error> {
     let mut buffer = [0; 1024];
 
     loop {
-        // Read data
         let n = stream.read(&mut buffer)?;
 
         if n == 0 {
-            // Connection closed by client
             println!("Connection closed by client");
             return Ok(()); 
         }
