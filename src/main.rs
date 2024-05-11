@@ -1,19 +1,27 @@
-use std::io::{prelude::*, Error};
-use std::net::{TcpListener, TcpStream};
-use std::thread;
+use anyhow::Result;
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
+use bytes::BytesMut;
 
-fn main() {
+use crate::{handler::handle, parser::parse_data};
+
+mod handler;
+mod message;
+mod parser;
+
+#[tokio::main]
+async fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
 
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
-    
-    for stream in listener.incoming() {
+    let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+
+    loop {
+        let stream = listener.accept().await;
         match stream {
-            Ok(stream) => {
+            Ok((stream, _)) => {
                 println!("accepted new connection");
-                thread::spawn(move ||{
-                    handle_connection(stream).unwrap_or_else(|error| eprintln!("{:?}", error));
+                tokio::spawn(async move {
+                    handle_connection(stream).await.unwrap_or_else(|error| eprintln!("{:?}", error));
                 });
             }
             Err(e) => {
@@ -23,19 +31,24 @@ fn main() {
     }
 }
 
-fn handle_connection(mut stream: TcpStream) -> Result<(), Error> {
-    let mut buffer = [0; 1024];
+async fn handle_connection(mut stream: TcpStream) -> Result<()> {
+    let mut buffer = BytesMut::with_capacity(1024);
 
     loop {
-        let n = stream.read(&mut buffer)?;
+        let n = stream.read_buf(&mut buffer).await?;
 
         if n == 0 {
             println!("Connection closed by client");
             return Ok(()); 
         }
 
-        println!("Received from client: {}", String::from_utf8_lossy(&buffer[..n]));
+        let message = parse_data(buffer.split())?;
 
-        write!(stream, "+PONG\r\n").unwrap();
+        println!("Received from client: {}", message);
+
+        let response = handle(message).await?;
+        println!("Responding: {}", response);
+        stream.write_all(&response.to_data()).await?;
+//        write!(stream, "+PONG\r\n").unwrap();
     }
 }
