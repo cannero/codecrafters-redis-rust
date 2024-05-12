@@ -1,34 +1,34 @@
-use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 
-use crate::message::Message;
+use crate::{db::Db, message::Message};
 
 pub struct MessageHandler {
-    storage: HashMap<Message, Message>,
+    db: Arc<Db>
 }
 
 impl MessageHandler {
 
-    pub fn new() -> Self {
+    pub fn new(db: Arc<Db>) -> Self {
         Self {
-            storage: HashMap::new(),
+            db,
         }
     }
 
-    pub async fn handle(&mut self, message: Message) -> Result<Message> {
+    pub async fn handle(&self, message: Message) -> Result<Message> {
         match message {
             // Message::SimpleString(the_string) if the_string.to_uppercase() == "PING" => {
             //     stream.write_all(Message::SimpleString("PONG".to_string())).await?;
             // }
             Message::Array(vec) if vec.len() > 0 => {
-                self.handle_array(vec)
+                self.handle_array(vec).await
             }
             _ => bail!("don't know how to react to {}", message),
         }
     }
 
-    fn handle_array(&mut self, vec: Vec<Message>) -> Result<Message> {
+    async fn handle_array(&self, vec: Vec<Message>) -> Result<Message> {
         let command = vec.first().context("at least one message must exist")?;
         match command {
             Message::BulkString(command_string) => {
@@ -42,11 +42,13 @@ impl MessageHandler {
                 } else if command_string == "SET" {
                     let key = vec[1].clone();
                     let value = vec[2].clone();
-                    self.storage.insert(key, value);
+                    self.db.set(key, value).await;
+                    //self.storage.insert(key, value);
                     Ok(Message::SimpleString("OK".to_string()))
                 } else if command_string == "GET" {
                     let key = vec[1].clone();
-                    match self.storage.get(&key){
+                    //match self.storage.get(&key){
+                    match self.db.get(&key).await {
                         Some(value) => Ok(value.clone()),
                         None => Ok(Message::Null)
                     }
@@ -63,8 +65,14 @@ impl MessageHandler {
 mod tests {
     use super::*;
 
+    fn create_handler() -> MessageHandler {
+        let db = Arc::new(Db::new());
+        let handler = MessageHandler::new(db);
+        handler
+    }
+
     async fn handle_test(message: Message) -> Message {
-        let mut handler = MessageHandler::new();
+        let handler = create_handler();
         handler.handle(message).await.unwrap()
     }
 
@@ -99,7 +107,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_and_get_value() {
-        let mut handler = MessageHandler::new();
+        let handler = create_handler();
         let key = Message::BulkString("key1".to_string());
         let value = Message::BulkString("value1".to_string());
 

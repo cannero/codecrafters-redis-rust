@@ -1,18 +1,21 @@
+use std::sync::Arc;
+
 use anyhow::Result;
+use db::Db;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 use bytes::BytesMut;
 
 use crate::{handler::MessageHandler, parser::parse_data};
 
+mod db;
 mod handler;
 mod message;
 mod parser;
 
 #[tokio::main]
 async fn main() {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("Logs from your program will appear here!");
 
+    let db = Arc::new(Db::new());
     let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
 
     loop {
@@ -20,8 +23,9 @@ async fn main() {
         match stream {
             Ok((stream, _)) => {
                 println!("accepted new connection");
+                let db_cloned = db.clone();
                 tokio::spawn(async move {
-                    handle_connection(stream).await.unwrap_or_else(|error| eprintln!("{:?}", error));
+                    handle_connection(stream, db_cloned).await.unwrap_or_else(|error| eprintln!("{:?}", error));
                 });
             }
             Err(e) => {
@@ -31,9 +35,9 @@ async fn main() {
     }
 }
 
-async fn handle_connection(mut stream: TcpStream) -> Result<()> {
+async fn handle_connection(mut stream: TcpStream, db: Arc<Db>) -> Result<()> {
     let mut buffer = BytesMut::with_capacity(1024);
-    let mut handler = MessageHandler::new();
+    let handler = MessageHandler::new(db);
 
     loop {
         let n = stream.read_buf(&mut buffer).await?;
