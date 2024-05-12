@@ -2,7 +2,7 @@ use anyhow::Result;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 use bytes::BytesMut;
 
-use crate::{handler::handle, parser::parse_data};
+use crate::{handler::MessageHandler, parser::parse_data};
 
 mod handler;
 mod message;
@@ -33,6 +33,7 @@ async fn main() {
 
 async fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let mut buffer = BytesMut::with_capacity(1024);
+    let mut handler = MessageHandler::new();
 
     loop {
         let n = stream.read_buf(&mut buffer).await?;
@@ -46,9 +47,8 @@ async fn handle_connection(mut stream: TcpStream) -> Result<()> {
 
         println!("Received from client: {}", message);
 
-        let response = handle(message).await?;
+        let response = handler.handle(message).await?;
         println!("Responding: {}", response);
         stream.write_all(&response.to_data()).await?;
-//        write!(stream, "+PONG\r\n").unwrap();
     }
 }
