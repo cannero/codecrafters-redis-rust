@@ -5,6 +5,7 @@ pub enum Message{
     Null,
     SimpleString(String),
     BulkString(String),
+    NullBulkString,
     Array(Vec<Message>),
 }
 
@@ -14,6 +15,7 @@ impl fmt::Display for Message{
             Message::Null => write!(f, "null"),
             Message::SimpleString(the_str) => write!(f, "simple string `{}`", the_str),
             Message::BulkString(the_str) => write!(f, "bulk string `{}`", the_str),
+            Self::NullBulkString => write!(f, "null bulk string"),
             Message::Array(vec) => {
                 if vec.len() == 0 {
                     write!(f, "array with zero items")
@@ -54,6 +56,9 @@ impl Message {
                 data.extend_from_slice(the_str.as_bytes());
                 add_cr_nl(&mut data);
                 data
+            }
+            Message::NullBulkString => {
+                b"-1\r\n".to_vec()
             }
             Message::Array(arr) => {
                 let mut data = vec![b'*'];

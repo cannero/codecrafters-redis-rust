@@ -25,7 +25,7 @@ impl Db {
                 if expire_date.is_none() || now <= expire_date.unwrap() {
                     Some(m.clone())
                 } else {
-                    Some(Message::BulkString("".to_string()))
+                    Some(Message::NullBulkString)
                 }
             },
             None => None,
@@ -66,6 +66,6 @@ mod tests {
 
         let val = db.get(&key).await.unwrap();
 
-        assert_eq!(Message::BulkString("".to_string()), val);
+        assert_eq!(Message::NullBulkString, val);
     }
 }
