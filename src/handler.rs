@@ -8,6 +8,19 @@ pub struct MessageHandler {
     db: Arc<Db>
 }
 
+fn get_expire_time(messages: &Vec<Message>) -> Result<Option<i64>> {
+    match messages.get(3) {
+        Some(_) => {
+            let time = messages[4].clone();
+            match time {
+                Message::BulkString(value) => Ok(Some(value.parse::<i64>().unwrap())),
+                m => bail!("unknown message for expire_time {}", m),
+            }
+        }
+        None => Ok(None),
+    }
+}
+
 impl MessageHandler {
 
     pub fn new(db: Arc<Db>) -> Self {
@@ -18,9 +31,6 @@ impl MessageHandler {
 
     pub async fn handle(&self, message: Message) -> Result<Message> {
         match message {
-            // Message::SimpleString(the_string) if the_string.to_uppercase() == "PING" => {
-            //     stream.write_all(Message::SimpleString("PONG".to_string())).await?;
-            // }
             Message::Array(vec) if vec.len() > 0 => {
                 self.handle_array(vec).await
             }
@@ -42,12 +52,11 @@ impl MessageHandler {
                 } else if command_string == "SET" {
                     let key = vec[1].clone();
                     let value = vec[2].clone();
-                    self.db.set(key, value).await;
-                    //self.storage.insert(key, value);
+                    let expire_time = get_expire_time(&vec)?;
+                    self.db.set(key, value, expire_time).await?;
                     Ok(Message::SimpleString("OK".to_string()))
                 } else if command_string == "GET" {
                     let key = vec[1].clone();
-                    //match self.storage.get(&key){
                     match self.db.get(&key).await {
                         Some(value) => Ok(value.clone()),
                         None => Ok(Message::Null)
@@ -129,5 +138,18 @@ mod tests {
         let result_get = handler.handle(message_get).await.unwrap();
 
         assert_eq!(value, result_get);
+    }
+
+    #[test]
+    fn test_get_expire_time() {
+        let messages = vec![
+            Message::BulkString("SET".to_string()),
+            Message::BulkString("key".to_string()),
+            Message::BulkString("value".to_string()),
+            Message::BulkString("PX".to_string()),
+            Message::BulkString("100".to_string()),
+        ];
+
+        assert_eq!(Some(100), get_expire_time(&messages).unwrap());
     }
 }
