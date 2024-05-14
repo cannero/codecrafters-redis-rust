@@ -58,7 +58,7 @@ impl Message {
                 data
             }
             Message::NullBulkString => {
-                b"-1\r\n".to_vec()
+                b"$-1\r\n".to_vec()
             }
             Message::Array(arr) => {
                 let mut data = vec![b'*'];
