@@ -66,14 +66,28 @@ fn parse_simple_string(mut data: BytesMut) -> Result<ParsedData> {
     }
 }
 
-fn parse_bulk_string(data: BytesMut) -> Result<ParsedData> {
+fn parse_bulk_string(mut data: BytesMut) -> Result<ParsedData> {
+    if data.is_empty() {
+        return Err(ParseError::NoData);
+    }
 
-    match get_size(data) {
-        Ok((size, mut data)) => {
-            let bulk_string = String::from_utf8(data[..size].to_vec())?;
-            Ok((Message::BulkString(bulk_string), data.split_off(size + 2)))
+    match data[0] {
+        b'-' => {
+            if &data[1..4] != b"1\r\n" {
+                Err(ParseError::InvalidSizeContent(data.to_vec()))
+            } else {
+                Ok((Message::NullBulkString, data.split_off(4)))
+            }
         }
-        Err(err) => Err(err),
+        _ => {
+            match get_size(data) {
+                Ok((size, mut data)) => {
+                    let bulk_string = String::from_utf8(data[..size].to_vec())?;
+                    Ok((Message::BulkString(bulk_string), data.split_off(size + 2)))
+                }
+                Err(err) => Err(err),
+            }
+        }
     }
 }
 
@@ -220,6 +234,12 @@ mod tests {
     #[test]
     fn test_empty_bulk_string() {
         assert_bulk_string("0\r\n\r\n", "");
+    }
+
+    #[test]
+    fn test_null_bulk_string() {
+        let data = str_to_bytes("-1\r\n");
+        assert_eq!(parse_bulk_string(data), Ok((Message::NullBulkString, BytesMut::new())));
     }
 
     #[test]
