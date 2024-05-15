@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use db::Db;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 use bytes::BytesMut;
@@ -15,8 +15,10 @@ mod parser;
 #[tokio::main]
 async fn main() {
 
+    let port = parse_port().unwrap().unwrap_or(6379);
+
     let db = Arc::new(Db::new());
-    let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+    let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
 
     loop {
         let stream = listener.accept().await;
@@ -33,6 +35,27 @@ async fn main() {
             }
         }
     }
+}
+
+fn parse_port() -> Result<Option<u16>> {
+    let args = env::args().collect::<Vec<_>>();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--port" {
+            if i == args.len() -1 {
+                bail!("--port without number");
+            }
+
+            match args[i+1].parse::<u16>() {
+                Ok(port) => return Ok(Some(port)),
+                Err(err) => bail!(err),
+            }
+        }
+
+        i += 1;
+    }
+
+    Ok(None)
 }
 
 async fn handle_connection(mut stream: TcpStream, db: Arc<Db>) -> Result<()> {
