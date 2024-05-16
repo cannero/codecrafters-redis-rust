@@ -61,6 +61,13 @@ impl MessageHandler {
                         Some(value) => Ok(value.clone()),
                         None => Ok(Message::Null)
                     }
+                } else if command_string == "INFO" {
+                    let info_type = vec[1].clone();
+                    if info_type != Message::BulkString("replication".to_string()){
+                        bail!("unknown info type {}", info_type);
+                    }
+
+                    Ok(Message::BulkString("role:master".to_string()))
                 } else {
                     bail!("unknown command {}", command)
                 }
