@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 
-use crate::{db::Db, message::Message};
+use crate::{db::Db, message::Message, ServerState};
 
 pub struct MessageHandler {
-    db: Arc<Db>
+    db: Arc<Db>,
+    state: Arc<ServerState>,
 }
 
 fn get_expire_time(messages: &Vec<Message>) -> Result<Option<i64>> {
@@ -23,9 +24,10 @@ fn get_expire_time(messages: &Vec<Message>) -> Result<Option<i64>> {
 
 impl MessageHandler {
 
-    pub fn new(db: Arc<Db>) -> Self {
+    pub fn new(db: Arc<Db>, state: Arc<ServerState>) -> Self {
         Self {
             db,
+            state,
         }
     }
 
@@ -67,7 +69,7 @@ impl MessageHandler {
                         bail!("unknown info type {}", info_type);
                     }
 
-                    Ok(Message::BulkString("role:master".to_string()))
+                    Ok(Message::BulkString(format!("role:{}", self.state.role)))
                 } else {
                     bail!("unknown command {}", command)
                 }
@@ -83,7 +85,8 @@ mod tests {
 
     fn create_handler() -> MessageHandler {
         let db = Arc::new(Db::new());
-        let handler = MessageHandler::new(db);
+        let state = Arc::new(ServerState { role: "master".to_string()});
+        let handler = MessageHandler::new(db, state);
         handler
     }
 

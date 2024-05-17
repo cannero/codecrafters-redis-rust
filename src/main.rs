@@ -1,6 +1,7 @@
-use std::{env, sync::Arc};
+use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
+use clap::Parser;
 use db::Db;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 use bytes::BytesMut;
@@ -12,12 +13,38 @@ mod handler;
 mod message;
 mod parser;
 
+/// A redis server implementation
+#[derive(Parser, Debug)]
+struct Args {
+    /// Which port should be used
+    #[arg(long, default_value_t = 6379)]
+    port: u16,
+
+    #[arg(long)]
+    replicaof: Option<String>,
+}
+
+struct ServerState {
+    role: String,
+}
+
 #[tokio::main]
 async fn main() {
 
-    let port = parse_port().unwrap().unwrap_or(6379);
+    let args = Args::parse();
+    let port = args.port;
+
+    println!("Using port {port}");
 
     let db = Arc::new(Db::new());
+    let state = Arc::new(ServerState {
+        role : if args.replicaof.is_some() {
+            "slave".to_string()
+        } else {
+            "master".to_string()
+        },
+    });
+
     let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
 
     loop {
@@ -26,8 +53,9 @@ async fn main() {
             Ok((stream, _)) => {
                 println!("accepted new connection");
                 let db_cloned = db.clone();
+                let state_cloned = state.clone();
                 tokio::spawn(async move {
-                    handle_connection(stream, db_cloned).await.unwrap_or_else(|error| eprintln!("{:?}", error));
+                    handle_connection(stream, db_cloned, state_cloned).await.unwrap_or_else(|error| eprintln!("{:?}", error));
                 });
             }
             Err(e) => {
@@ -37,30 +65,9 @@ async fn main() {
     }
 }
 
-fn parse_port() -> Result<Option<u16>> {
-    let args = env::args().collect::<Vec<_>>();
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "--port" {
-            if i == args.len() -1 {
-                bail!("--port without number");
-            }
-
-            match args[i+1].parse::<u16>() {
-                Ok(port) => return Ok(Some(port)),
-                Err(err) => bail!(err),
-            }
-        }
-
-        i += 1;
-    }
-
-    Ok(None)
-}
-
-async fn handle_connection(mut stream: TcpStream, db: Arc<Db>) -> Result<()> {
+async fn handle_connection(mut stream: TcpStream, db: Arc<Db>, state: Arc<ServerState>) -> Result<()> {
     let mut buffer = BytesMut::with_capacity(1024);
-    let handler = MessageHandler::new(db);
+    let handler = MessageHandler::new(db, state);
 
     loop {
         let n = stream.read_buf(&mut buffer).await?;
