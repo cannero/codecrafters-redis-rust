@@ -21,11 +21,13 @@ struct Args {
     port: u16,
 
     #[arg(long)]
-    replicaof: Option<String>,
+    replicaof: Option<Vec<String>>,
 }
 
 struct ServerState {
     role: String,
+    master_replid: String,
+    master_repl_offset: u32,
 }
 
 #[tokio::main]
@@ -35,6 +37,7 @@ async fn main() {
     let port = args.port;
 
     println!("Using port {port}");
+    println!("{:?}", args.replicaof);
 
     let db = Arc::new(Db::new());
     let state = Arc::new(ServerState {
@@ -43,6 +46,8 @@ async fn main() {
         } else {
             "master".to_string()
         },
+        master_replid: "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".to_string(),
+        master_repl_offset: 0,
     });
 
     let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();

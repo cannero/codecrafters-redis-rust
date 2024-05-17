@@ -69,13 +69,22 @@ impl MessageHandler {
                         bail!("unknown info type {}", info_type);
                     }
 
-                    Ok(Message::BulkString(format!("role:{}", self.state.role)))
+                    self.build_replication_info()
+
                 } else {
                     bail!("unknown command {}", command)
                 }
             }
             _ => bail!("unknown command type {}", command),
         }
+    }
+
+    fn build_replication_info(&self) -> Result<Message> {
+        //self.state.master_replid
+        Ok(Message::BulkString(format!("role:{}\nmaster_replid:{}\nmaster_repl_offset:{}",
+                                       self.state.role,
+                                       self.state.master_replid,
+                                       self.state.master_repl_offset)))
     }
 }
 
@@ -85,7 +94,11 @@ mod tests {
 
     fn create_handler() -> MessageHandler {
         let db = Arc::new(Db::new());
-        let state = Arc::new(ServerState { role: "master".to_string()});
+        let state = Arc::new(ServerState {
+            role: "master".to_string(),
+            master_replid: "2310921903".to_string(),
+            master_repl_offset: 0,
+        });
         let handler = MessageHandler::new(db, state);
         handler
     }
@@ -161,5 +174,20 @@ mod tests {
         ];
 
         assert_eq!(Some(100), get_expire_time(&messages).unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_info_replication() {
+        let handler = create_handler();
+        let messages = vec![
+            Message::BulkString("INFO".to_string()),
+            Message::BulkString("replication".to_string()),
+        ];
+
+        if let Message::BulkString(result) = handler.handle_array(messages).await.unwrap() {
+            assert!(result.contains("master_replid"));
+        } else {
+            assert!(false, "Info command should return a bulk string");
+        }
     }
 }

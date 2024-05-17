@@ -25,6 +25,7 @@ impl Db {
                 if expire_date.is_none() || now <= expire_date.unwrap() {
                     Some(m.clone())
                 } else {
+                    // TODO: remove entry
                     Some(Message::NullBulkString)
                 }
             },
