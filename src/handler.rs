@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 
-use crate::{db::Db, message::Message, ServerState};
+use crate::{db::Db, message::Message, ServerRole, ServerState};
 
 pub struct MessageHandler {
     db: Arc<Db>,
@@ -80,9 +80,13 @@ impl MessageHandler {
     }
 
     fn build_replication_info(&self) -> Result<Message> {
-        //self.state.master_replid
+        let role = match self.state.role {
+            ServerRole::Leader => "master",
+            ServerRole::Follower => "slave",
+        };
+
         Ok(Message::BulkString(format!("role:{}\nmaster_replid:{}\nmaster_repl_offset:{}",
-                                       self.state.role,
+                                       role,
                                        self.state.master_replid,
                                        self.state.master_repl_offset)))
     }
@@ -95,7 +99,7 @@ mod tests {
     fn create_handler() -> MessageHandler {
         let db = Arc::new(Db::new());
         let state = Arc::new(ServerState {
-            role: "master".to_string(),
+            role: ServerRole::Leader,
             master_replid: "2310921903".to_string(),
             master_repl_offset: 0,
         });

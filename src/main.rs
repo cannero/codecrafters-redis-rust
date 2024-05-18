@@ -24,8 +24,13 @@ struct Args {
     replicaof: Option<Vec<String>>,
 }
 
+enum ServerRole {
+    Leader,
+    Follower,
+}
+
 struct ServerState {
-    role: String,
+    role: ServerRole,
     master_replid: String,
     master_repl_offset: u32,
 }
@@ -42,9 +47,11 @@ async fn main() {
     let db = Arc::new(Db::new());
     let state = Arc::new(ServerState {
         role : if args.replicaof.is_some() {
-            "slave".to_string()
+            ServerRole::Follower
+            //"slave".to_string()
         } else {
-            "master".to_string()
+            ServerRole::Leader
+            //"master".to_string()
         },
         master_replid: "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".to_string(),
         master_repl_offset: 0,
