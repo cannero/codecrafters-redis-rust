@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use clap::Parser;
 use db::Db;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream, ToSocketAddrs}};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 use bytes::BytesMut;
 
 use crate::{handler::MessageHandler, parser::parse_data};
@@ -26,7 +26,7 @@ struct Args {
 }
 
 impl Args {
-    fn get_leader_addr(&self) -> Result<impl ToSocketAddrs> {
+    fn get_leader_addr(&self) -> Result<(String, u16)> {
         match self.replicaof.clone() {
             Some(addr_and_port) => {
                 let parts = addr_and_port.split(' ').collect::<Vec<_>>();

@@ -46,23 +46,25 @@ impl MessageHandler {
             Message::BulkString(command_string) => {
                 let command_string = command_string.to_uppercase();
                 if command_string == "PING" {
-                    //Ok(Message::Array(vec![
                     Ok(Message::BulkString("PONG".to_string()))
-                    //]))
+
                 } else if command_string == "ECHO" {
                     Ok(vec[1].clone())
+
                 } else if command_string == "SET" {
                     let key = vec[1].clone();
                     let value = vec[2].clone();
                     let expire_time = get_expire_time(&vec)?;
                     self.db.set(key, value, expire_time).await?;
                     Ok(Message::SimpleString("OK".to_string()))
+
                 } else if command_string == "GET" {
                     let key = vec[1].clone();
                     match self.db.get(&key).await {
                         Some(value) => Ok(value.clone()),
                         None => Ok(Message::Null)
                     }
+
                 } else if command_string == "INFO" {
                     let info_type = vec[1].clone();
                     if info_type != Message::BulkString("replication".to_string()){
@@ -70,6 +72,10 @@ impl MessageHandler {
                     }
 
                     self.build_replication_info()
+
+                } else if command_string == "REPLCONF" {
+                    // for now just respond with ok
+                    Ok(Message::SimpleString("OK".to_string()))
 
                 } else {
                     bail!("unknown command {}", command)
@@ -95,6 +101,28 @@ impl MessageHandler {
         Message::Array(vec![
             Message::BulkString("PING".to_string()),
         ])
+    }
+
+    pub fn get_replconf_command<T1: ToString, T2: ToString>(name: T1, value: T2) -> Message {
+        Message::Array(vec![
+            Message::BulkString("REPLCONF".to_string()),
+            Message::BulkString(name.to_string()),
+            Message::BulkString(value.to_string()),
+        ])
+    }
+
+    pub fn is_valid_return_for_ping(message: &Message) -> bool {
+        match message {
+            Message::BulkString(resp) if resp.to_uppercase() == "PONG" => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_valid_return_for_replconf(message: &Message) -> bool {
+        match message {
+            Message::SimpleString(resp) if resp.to_uppercase() == "OK" => true,
+            _ => false,
+        }
     }
 }
 
