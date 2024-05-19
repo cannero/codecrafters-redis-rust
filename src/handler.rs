@@ -138,6 +138,7 @@ mod tests {
             role: ServerRole::Leader,
             master_replid: "2310921903".to_string(),
             master_repl_offset: 0,
+            listener_port: 1234,
         });
         let handler = MessageHandler::new(db, state);
         handler

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use clap::Parser;
 use db::Db;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream, ToSocketAddrs}};
 use bytes::BytesMut;
 
 use crate::{handler::MessageHandler, parser::parse_data};
@@ -26,7 +26,7 @@ struct Args {
 }
 
 impl Args {
-    fn get_leader_addr(&self) -> Result<(String, u16)> {
+    fn get_leader_addr(&self) -> Result<impl ToSocketAddrs> {
         match self.replicaof.clone() {
             Some(addr_and_port) => {
                 let parts = addr_and_port.split(' ').collect::<Vec<_>>();
@@ -55,6 +55,7 @@ struct ServerState {
     role: ServerRole,
     master_replid: String,
     master_repl_offset: u32,
+    listener_port: u16,
 }
 
 #[tokio::main]
@@ -74,12 +75,14 @@ async fn main() {
         },
         master_replid: "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".to_string(),
         master_repl_offset: 0,
+        listener_port: args.port,
     });
 
     if state.role == ServerRole::Follower {
         let leader_addr = args.get_leader_addr().expect("replicaof not set correctly");
+        let state_cloned = state.clone();
         tokio::spawn(async move{
-            replication_client::start_replication(leader_addr).await
+            replication_client::start_replication(state_cloned, leader_addr).await
                 .unwrap_or_else(|error| eprintln!("replication: {:?}", error));
         });
     }

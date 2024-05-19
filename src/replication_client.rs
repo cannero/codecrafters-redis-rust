@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
 use anyhow::{bail, Result};
 use bytes::BytesMut;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, ToSocketAddrs}};
 
-use crate::{handler::MessageHandler, message::Message, parser::parse_data};
+use crate::{handler::MessageHandler, message::Message, parser::parse_data, ServerState};
 
-pub async fn start_replication((leader_ip, leader_port): (String, u16)) -> Result<()>{
-    let mut stream = TcpStream::connect((leader_ip, leader_port)).await?;
+pub async fn start_replication(server_state: Arc<ServerState>, leader_addr: impl ToSocketAddrs) -> Result<()>{
+    let mut stream = TcpStream::connect(leader_addr).await?;
 
     send_command(MessageHandler::get_ping_command(), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
@@ -13,7 +15,7 @@ pub async fn start_replication((leader_ip, leader_port): (String, u16)) -> Resul
         bail!("Unknown reply for ping: {}", reply);
     }
 
-    send_command(MessageHandler::get_replconf_command("listening-port", leader_port), &mut stream).await?;
+    send_command(MessageHandler::get_replconf_command("listening-port", server_state.listener_port), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
     if !MessageHandler::is_valid_return_for_replconf(&reply){
         bail!("Unknown reply for listening-port: {}", reply);
