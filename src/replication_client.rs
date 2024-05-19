@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use bytes::BytesMut;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, ToSocketAddrs}};
 
@@ -11,21 +11,19 @@ pub async fn start_replication(server_state: Arc<ServerState>, leader_addr: impl
 
     send_command(MessageHandler::get_ping_command(), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
-    if !MessageHandler::is_valid_return_for_ping(&reply){
-        bail!("Unknown reply for ping: {}", reply);
-    }
+    MessageHandler::check_ping_reply(&reply)?;
 
     send_command(MessageHandler::get_replconf_command("listening-port", server_state.listener_port), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
-    if !MessageHandler::is_valid_return_for_replconf(&reply){
-        bail!("Unknown reply for listening-port: {}", reply);
-    }
+    MessageHandler::check_replconf_reply(&reply).context("listening port")?;
 
     send_command(MessageHandler::get_replconf_command("capa", "psync2"), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
-    if !MessageHandler::is_valid_return_for_replconf(&reply){
-        bail!("Unknown reply for capa: {}", reply);
-    }
+    MessageHandler::check_replconf_reply(&reply).context("capa")?;
+
+    send_command(MessageHandler::get_psync_command("?", -1), &mut stream).await?;
+    let reply = get_reply(&mut stream).await?;
+    MessageHandler::check_for_psync_reply(&reply)?;
 
     Ok(())
 }

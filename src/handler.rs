@@ -77,6 +77,10 @@ impl MessageHandler {
                     // for now just respond with ok
                     Ok(Message::SimpleString("OK".to_string()))
 
+                } else if command_string == "PSYNC" {
+                    Ok(Message::SimpleString(format!("FULLRESYNC {} 0",
+                                                     self.state.master_replid)))
+
                 } else {
                     bail!("unknown command {}", command)
                 }
@@ -111,19 +115,35 @@ impl MessageHandler {
         ])
     }
 
-    pub fn is_valid_return_for_ping(message: &Message) -> bool {
+    pub fn get_psync_command(master_replid: &str, master_offset: i64) -> Message {
+        Message::Array(vec![
+            Message::BulkString("PSYNC".to_string()),
+            Message::BulkString(master_replid.to_string()),
+            Message::BulkString(master_offset.to_string()),
+        ])
+    }
+
+    pub fn check_ping_reply(message: &Message) -> Result<()> {
         match message {
             Message::BulkString(resp) |
-            Message::SimpleString(resp) if resp.to_uppercase() == "PONG" => true,
-            _ => false,
+            Message::SimpleString(resp) if resp.to_uppercase() == "PONG" => Ok(()),
+            _ => bail!("wrong ping reply: {}", message),
         }
     }
 
-    pub fn is_valid_return_for_replconf(message: &Message) -> bool {
+    pub fn check_replconf_reply(message: &Message) -> Result<()> {
         match message {
             Message::BulkString(resp) |
-            Message::SimpleString(resp) if resp.to_uppercase() == "OK" => true,
-            _ => false,
+            Message::SimpleString(resp) if resp.to_uppercase() == "OK" => Ok(()),
+            _ => bail!("wrong replconf reply: {}", message),
+        }
+    }
+
+    pub fn check_for_psync_reply(message: &Message) -> Result<()> {
+        match message {
+            Message::SimpleString(resp) if resp.to_uppercase()
+                .starts_with("FULLRESYNC") => Ok(()),
+            _ => bail!("wrong psync reply: {}", message),
         }
     }
 }
