@@ -113,13 +113,15 @@ impl MessageHandler {
 
     pub fn is_valid_return_for_ping(message: &Message) -> bool {
         match message {
-            Message::BulkString(resp) if resp.to_uppercase() == "PONG" => true,
+            Message::BulkString(resp) |
+            Message::SimpleString(resp) if resp.to_uppercase() == "PONG" => true,
             _ => false,
         }
     }
 
     pub fn is_valid_return_for_replconf(message: &Message) -> bool {
         match message {
+            Message::BulkString(resp) |
             Message::SimpleString(resp) if resp.to_uppercase() == "OK" => true,
             _ => false,
         }
