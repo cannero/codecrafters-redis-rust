@@ -90,6 +90,12 @@ impl MessageHandler {
                                        self.state.master_replid,
                                        self.state.master_repl_offset)))
     }
+
+    pub fn get_ping_command() -> Message {
+        Message::Array(vec![
+            Message::BulkString("PING".to_string()),
+        ])
+    }
 }
 
 #[cfg(test)]
