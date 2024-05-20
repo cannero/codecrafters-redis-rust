@@ -31,7 +31,7 @@ impl MessageHandler {
         }
     }
 
-    pub async fn handle(&self, message: Message) -> Result<Message> {
+    pub async fn handle(&self, message: Message) -> Result<Vec<Message>> {
         match message {
             Message::Array(vec) if vec.len() > 0 => {
                 self.handle_array(vec).await
@@ -40,29 +40,29 @@ impl MessageHandler {
         }
     }
 
-    async fn handle_array(&self, vec: Vec<Message>) -> Result<Message> {
+    async fn handle_array(&self, vec: Vec<Message>) -> Result<Vec<Message>> {
         let command = vec.first().context("at least one message must exist")?;
         match command {
             Message::BulkString(command_string) => {
                 let command_string = command_string.to_uppercase();
                 if command_string == "PING" {
-                    Ok(Message::BulkString("PONG".to_string()))
+                    Ok(vec![Message::BulkString("PONG".to_string())])
 
                 } else if command_string == "ECHO" {
-                    Ok(vec[1].clone())
+                    Ok(vec![vec[1].clone()])
 
                 } else if command_string == "SET" {
                     let key = vec[1].clone();
                     let value = vec[2].clone();
                     let expire_time = get_expire_time(&vec)?;
                     self.db.set(key, value, expire_time).await?;
-                    Ok(Message::SimpleString("OK".to_string()))
+                    Ok(vec![Message::SimpleString("OK".to_string())])
 
                 } else if command_string == "GET" {
                     let key = vec[1].clone();
                     match self.db.get(&key).await {
-                        Some(value) => Ok(value.clone()),
-                        None => Ok(Message::Null)
+                        Some(value) => Ok(vec![value.clone()]),
+                        None => Ok(vec![Message::Null])
                     }
 
                 } else if command_string == "INFO" {
@@ -75,11 +75,12 @@ impl MessageHandler {
 
                 } else if command_string == "REPLCONF" {
                     // for now just respond with ok
-                    Ok(Message::SimpleString("OK".to_string()))
+                    Ok(vec![Message::SimpleString("OK".to_string())])
 
                 } else if command_string == "PSYNC" {
-                    Ok(Message::SimpleString(format!("FULLRESYNC {} 0",
-                                                     self.state.master_replid)))
+                    Ok(vec![Message::SimpleString(format!("FULLRESYNC {} 0",
+                                                          self.state.master_replid)),
+                            Self::get_rdb_file()])
 
                 } else {
                     bail!("unknown command {}", command)
@@ -89,16 +90,16 @@ impl MessageHandler {
         }
     }
 
-    fn build_replication_info(&self) -> Result<Message> {
+    fn build_replication_info(&self) -> Result<Vec<Message>> {
         let role = match self.state.role {
             ServerRole::Leader => "master",
             ServerRole::Follower => "slave",
         };
 
-        Ok(Message::BulkString(format!("role:{}\nmaster_replid:{}\nmaster_repl_offset:{}",
+        Ok(vec![Message::BulkString(format!("role:{}\nmaster_replid:{}\nmaster_repl_offset:{}",
                                        role,
                                        self.state.master_replid,
-                                       self.state.master_repl_offset)))
+                                       self.state.master_repl_offset))])
     }
 
     pub fn get_ping_command() -> Message {
@@ -139,12 +140,16 @@ impl MessageHandler {
         }
     }
 
-    pub fn check_for_psync_reply(message: &Message) -> Result<()> {
+    pub fn check_psync_reply(message: &Message) -> Result<()> {
         match message {
             Message::SimpleString(resp) if resp.to_uppercase()
                 .starts_with("FULLRESYNC") => Ok(()),
             _ => bail!("wrong psync reply: {}", message),
         }
+    }
+
+    fn get_rdb_file() -> Message {
+        Message::RdbFile(b"524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2".to_vec())
     }
 }
 
@@ -166,7 +171,7 @@ mod tests {
 
     async fn handle_test(message: Message) -> Message {
         let handler = create_handler();
-        handler.handle(message).await.unwrap()
+        handler.handle(message).await.unwrap()[0].clone()
     }
 
     #[tokio::test]
@@ -212,7 +217,7 @@ mod tests {
 
         let result_set = handler.handle(message_set).await.unwrap();
 
-        assert_eq!(Message::SimpleString("OK".to_string()), result_set);
+        assert_eq!(Message::SimpleString("OK".to_string()), result_set[0]);
 
         let message_get = Message::Array(vec![
             Message::BulkString("GET".to_string()),
@@ -221,7 +226,7 @@ mod tests {
 
         let result_get = handler.handle(message_get).await.unwrap();
 
-        assert_eq!(value, result_get);
+        assert_eq!(value, result_get[0]);
     }
 
     #[test]
@@ -245,10 +250,17 @@ mod tests {
             Message::BulkString("replication".to_string()),
         ];
 
-        if let Message::BulkString(result) = handler.handle_array(messages).await.unwrap() {
+        if let Message::BulkString(result) = handler.handle_array(messages).await.unwrap()[0].clone() {
             assert!(result.contains("master_replid"));
         } else {
             assert!(false, "Info command should return a bulk string");
         }
+    }
+
+    #[tokio::test]
+    async fn test_handle_psync() {
+        let handler = create_handler();
+        let result = handler.handle(MessageHandler::get_psync_command("id", 123)).await.unwrap();
+        assert_eq!(2, result.len());
     }
 }

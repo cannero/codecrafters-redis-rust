@@ -23,7 +23,7 @@ pub async fn start_replication(server_state: Arc<ServerState>, leader_addr: impl
 
     send_command(MessageHandler::get_psync_command("?", -1), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
-    MessageHandler::check_for_psync_reply(&reply)?;
+    MessageHandler::check_psync_reply(&reply)?;
 
     Ok(())
 }

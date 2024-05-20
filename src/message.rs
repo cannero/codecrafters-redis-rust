@@ -7,6 +7,7 @@ pub enum Message{
     BulkString(String),
     NullBulkString,
     Array(Vec<Message>),
+    RdbFile(Vec<u8>),
 }
 
 impl fmt::Display for Message{
@@ -22,7 +23,8 @@ impl fmt::Display for Message{
                 } else {
                     write!(f, "array with `{}` items, first: `{}`", vec.len(), vec[0])
                 }
-            }
+            },
+            Message::RdbFile(content) => write!(f, "rdb file, len {}", content.len()),
         }
     }
 }
@@ -67,7 +69,13 @@ impl Message {
                     data.extend(item.to_data());
                 }
                 data
-            },
+            }
+            Message::RdbFile(content) => {
+                let mut data = vec![b'*'];
+                add_len(content.len(), &mut data);
+                data.extend(content);
+                data
+            }
         }
     }
 }

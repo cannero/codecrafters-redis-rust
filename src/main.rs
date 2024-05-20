@@ -125,7 +125,10 @@ async fn handle_connection(mut stream: TcpStream, db: Arc<Db>, state: Arc<Server
         println!("Received from client: {}", message);
 
         let response = handler.handle(message).await?;
-        println!("Responding: {}", response);
-        stream.write_all(&response.to_data()).await?;
+
+        for message in response {
+            println!("Responding: {}", message);
+            stream.write_all(&message.to_data()).await?;
+        }
     }
 }
