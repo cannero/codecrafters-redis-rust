@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
+use tokio::sync::broadcast::Sender;
 
-use crate::{db::Db, message::Message, ServerRole, ServerState};
+use crate::{db::Db, message::Message, ServerRole, ServerConfig};
 
 pub struct MessageHandler {
     db: Arc<Db>,
-    state: Arc<ServerState>,
+    state: Arc<ServerConfig>,
+    sender: Sender<Message>,
+    replication_client_ack: bool,
 }
 
 fn get_expire_time(messages: &Vec<Message>) -> Result<Option<i64>> {
@@ -24,14 +27,20 @@ fn get_expire_time(messages: &Vec<Message>) -> Result<Option<i64>> {
 
 impl MessageHandler {
 
-    pub fn new(db: Arc<Db>, state: Arc<ServerState>) -> Self {
+    pub fn new(db: Arc<Db>, state: Arc<ServerConfig>, sender: Sender<Message>) -> Self {
         Self {
             db,
             state,
+            sender,
+            replication_client_ack: false,
         }
     }
 
-    pub async fn handle(&self, message: Message) -> Result<Vec<Message>> {
+    pub fn replication_client_acknowleged(&self) -> bool {
+        self.replication_client_ack
+    }
+
+    pub async fn handle(&mut self, message: Message) -> Result<Vec<Message>> {
         match message {
             Message::Array(vec) if vec.len() > 0 => {
                 self.handle_array(vec).await
@@ -40,7 +49,7 @@ impl MessageHandler {
         }
     }
 
-    async fn handle_array(&self, vec: Vec<Message>) -> Result<Vec<Message>> {
+    async fn handle_array(&mut self, vec: Vec<Message>) -> Result<Vec<Message>> {
         let command = vec.first().context("at least one message must exist")?;
         match command {
             Message::BulkString(command_string) => {
@@ -56,7 +65,9 @@ impl MessageHandler {
                     let value = vec[2].clone();
                     let expire_time = get_expire_time(&vec)?;
                     self.db.set(key, value, expire_time).await?;
-                    Ok(vec![Message::SimpleString("OK".to_string())])
+                    let message = Message::SimpleString("OK".to_string());
+                    self.distribute_message(&Message::Array(vec.clone()));
+                    Ok(vec![message])
 
                 } else if command_string == "GET" {
                     let key = vec[1].clone();
@@ -78,6 +89,7 @@ impl MessageHandler {
                     Ok(vec![Message::SimpleString("OK".to_string())])
 
                 } else if command_string == "PSYNC" {
+                    self.replication_client_ack = true;
                     Ok(vec![Message::SimpleString(format!("FULLRESYNC {} 0",
                                                           self.state.master_replid)),
                             Self::get_rdb_file()])
@@ -100,6 +112,12 @@ impl MessageHandler {
                                        role,
                                        self.state.master_replid,
                                        self.state.master_repl_offset))])
+    }
+
+    fn distribute_message(&self, message: &Message){
+        // A SendError may be returned when no receivers exist.
+        // As they are only created when replication is running, this is no problem.
+        _ = self.sender.send(message.clone());
     }
 
     pub fn get_ping_command() -> Message {
@@ -161,22 +179,44 @@ impl MessageHandler {
 
 #[cfg(test)]
 mod tests {
+    use tokio::sync::broadcast::{self, Receiver};
+
     use super::*;
 
     fn create_handler() -> MessageHandler {
+        let (handler, _) = create_handler_and_recx();
+        handler
+    }
+
+    fn create_handler_and_recx() -> (MessageHandler, Receiver<Message>) {
         let db = Arc::new(Db::new());
-        let state = Arc::new(ServerState {
+        let state = Arc::new(ServerConfig {
             role: ServerRole::Leader,
             master_replid: "2310921903".to_string(),
             master_repl_offset: 0,
             listener_port: 1234,
         });
-        let handler = MessageHandler::new(db, state);
-        handler
+        let (tx, rx) = broadcast::channel(1);
+
+        let handler = MessageHandler::new(db, state, tx);
+        (handler, rx)
+    }
+
+    fn get_set_command(key: &str, value: &str) -> (Message, Message, Message) {
+        let key = Message::BulkString(key.to_string());
+        let value = Message::BulkString(value.to_string());
+
+        let message_set = Message::Array(vec![
+            Message::BulkString("SET".to_string()),
+            key.clone(),
+            value.clone(),
+        ]);
+
+        (key, value, message_set)
     }
 
     async fn handle_test(message: Message) -> Message {
-        let handler = create_handler();
+        let mut handler = create_handler();
         handler.handle(message).await.unwrap()[0].clone()
     }
 
@@ -211,15 +251,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_and_get_value() {
-        let handler = create_handler();
-        let key = Message::BulkString("key1".to_string());
-        let value = Message::BulkString("value1".to_string());
-
-        let message_set = Message::Array(vec![
-            Message::BulkString("SET".to_string()),
-            key.clone(),
-            value.clone(),
-        ]);
+        let mut handler = create_handler();
+        let key = "key1";
+        let value = "value1";
+        let (key, value, message_set) = get_set_command(key, value);
 
         let result_set = handler.handle(message_set).await.unwrap();
 
@@ -250,7 +285,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_info_replication() {
-        let handler = create_handler();
+        let mut handler = create_handler();
         let messages = vec![
             Message::BulkString("INFO".to_string()),
             Message::BulkString("replication".to_string()),
@@ -265,8 +300,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_psync() {
-        let handler = create_handler();
+        let mut handler = create_handler();
         let result = handler.handle(MessageHandler::get_psync_command("id", 123)).await.unwrap();
         assert_eq!(2, result.len());
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_without_receiver_does_not_fail() {
+        let (mut handler, rx) = create_handler_and_recx();
+        std::mem::drop(rx);
+        let (_, _, set_command) = get_set_command("keyyyy", "val");
+
+        let result = handler.handle(set_command).await.unwrap();
+        assert_eq!(Message::SimpleString("OK".to_string()), result[0]);
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_receive_message() {
+        let (mut handler, mut rx) = create_handler_and_recx();
+        let (_, _, set_command) = get_set_command("keyyyy", "val");
+
+        let result = handler.handle(set_command.clone()).await.unwrap();
+        assert_eq!(Message::SimpleString("OK".to_string()), result[0]);
+
+        let message_recv = rx.recv().await.unwrap();
+        assert_eq!(set_command, message_recv);
     }
 }

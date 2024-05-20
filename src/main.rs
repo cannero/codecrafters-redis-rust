@@ -3,16 +3,14 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use clap::Parser;
 use db::Db;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream, ToSocketAddrs}};
-use bytes::BytesMut;
-
-use crate::{handler::MessageHandler, parser::parse_data};
+use tokio::net::ToSocketAddrs;
 
 mod db;
 mod handler;
 mod message;
 mod parser;
 mod replication_client;
+mod server;
 
 /// A redis server implementation
 #[derive(Parser, Debug)]
@@ -51,7 +49,7 @@ enum ServerRole {
     Follower,
 }
 
-struct ServerState {
+struct ServerConfig {
     role: ServerRole,
     master_replid: String,
     master_repl_offset: u32,
@@ -67,7 +65,7 @@ async fn main() {
     println!("Using port {port}");
 
     let db = Arc::new(Db::new());
-    let state = Arc::new(ServerState {
+    let state = Arc::new(ServerConfig {
         role : if args.replicaof.is_some() {
             ServerRole::Follower
         } else {
@@ -87,48 +85,5 @@ async fn main() {
         });
     }
 
-    let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
-
-    loop {
-        let stream = listener.accept().await;
-        match stream {
-            Ok((stream, _)) => {
-                println!("accepted new connection");
-                let db_cloned = db.clone();
-                let state_cloned = state.clone();
-                tokio::spawn(async move {
-                    handle_connection(stream, db_cloned, state_cloned).await
-                        .unwrap_or_else(|error| eprintln!("{:?}", error));
-                });
-            }
-            Err(e) => {
-                println!("error: {}", e);
-            }
-        }
-    }
-}
-
-async fn handle_connection(mut stream: TcpStream, db: Arc<Db>, state: Arc<ServerState>) -> Result<()> {
-    let mut buffer = BytesMut::with_capacity(1024);
-    let handler = MessageHandler::new(db, state);
-
-    loop {
-        let n = stream.read_buf(&mut buffer).await?;
-
-        if n == 0 {
-            println!("Connection closed by client");
-            return Ok(()); 
-        }
-
-        let message = parse_data(buffer.split())?;
-
-        println!("Received from client: {}", message);
-
-        let response = handler.handle(message).await?;
-
-        for message in response {
-            println!("Responding: {}", message);
-            stream.write_all(&message.to_data()).await?;
-        }
-    }
+    server::start(state, db).await.expect("running server failed");
 }

@@ -4,9 +4,9 @@ use anyhow::{bail, Context, Result};
 use bytes::BytesMut;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, ToSocketAddrs}};
 
-use crate::{handler::MessageHandler, message::Message, parser::parse_data, ServerState};
+use crate::{handler::MessageHandler, message::Message, parser::parse_data, ServerConfig};
 
-pub async fn start_replication(server_state: Arc<ServerState>, leader_addr: impl ToSocketAddrs) -> Result<()>{
+pub async fn start_replication(server_state: Arc<ServerConfig>, leader_addr: impl ToSocketAddrs) -> Result<()>{
     let mut stream = TcpStream::connect(leader_addr).await?;
 
     send_command(MessageHandler::get_ping_command(), &mut stream).await?;
@@ -25,7 +25,12 @@ pub async fn start_replication(server_state: Arc<ServerState>, leader_addr: impl
     let reply = get_reply(&mut stream).await?;
     MessageHandler::check_psync_reply(&reply)?;
 
-    Ok(())
+    //TODO: get rdb file
+
+    loop {
+        let repl_message = get_reply(&mut stream).await?;
+        println!("repl: {repl_message}");
+    }
 }
 
 async fn send_command(command: Message, stream: &mut TcpStream) -> Result<()> {
