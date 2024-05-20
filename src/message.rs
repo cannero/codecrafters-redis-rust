@@ -71,7 +71,7 @@ impl Message {
                 data
             }
             Message::RdbFile(content) => {
-                let mut data = vec![b'*'];
+                let mut data = vec![b'$'];
                 add_len(content.len(), &mut data);
                 data.extend(content);
                 data
