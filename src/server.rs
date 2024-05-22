@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use bytes::BytesMut;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::broadcast::{self, Sender}};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::broadcast:: Sender};
 
 use crate::{db::Db, handler::MessageHandler, message::Message, parser::parse_data, ServerConfig};
 
@@ -12,10 +12,8 @@ struct ServerState {
     sender: Option<Sender<Message>>,
 }
 
-pub async fn start(config: Arc<ServerConfig>, db: Arc<Db>) -> Result<()> {
+pub async fn start(config: Arc<ServerConfig>, db: Arc<Db>, tx: Sender<Message>) -> Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", config.listener_port)).await?;
-    let (tx, rx) = broadcast::channel(20);
-    std::mem::drop(rx);
 
     loop {
         let stream = listener.accept().await;

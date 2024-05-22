@@ -3,7 +3,9 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use clap::Parser;
 use db::Db;
-use tokio::net::ToSocketAddrs;
+use tokio::{net::ToSocketAddrs, sync::broadcast};
+
+use crate::handler::MessageHandler;
 
 mod db;
 mod handler;
@@ -65,7 +67,7 @@ async fn main() {
     println!("Using port {port}");
 
     let db = Arc::new(Db::new());
-    let state = Arc::new(ServerConfig {
+    let config = Arc::new(ServerConfig {
         role : if args.replicaof.is_some() {
             ServerRole::Follower
         } else {
@@ -76,14 +78,21 @@ async fn main() {
         listener_port: args.port,
     });
 
-    if state.role == ServerRole::Follower {
+    let (tx, rx) = broadcast::channel(20);
+    std::mem::drop(rx);
+
+    if config.role == ServerRole::Follower {
         let leader_addr = args.get_leader_addr().expect("replicaof not set correctly");
-        let state_cloned = state.clone();
+        let config_cloned = config.clone();
+        let db_cloned = db.clone();
+        let tx_cloned = tx.clone();
+        let handler = MessageHandler::new(db_cloned, config_cloned, tx_cloned);
+        let listener_port = config.listener_port;
         tokio::spawn(async move{
-            replication_client::start_replication(state_cloned, leader_addr).await
+            replication_client::start_replication(listener_port, leader_addr, handler).await
                 .unwrap_or_else(|error| eprintln!("replication: {:?}", error));
         });
     }
 
-    server::start(state, db).await.expect("running server failed");
+    server::start(config, db, tx).await.expect("running server failed");
 }

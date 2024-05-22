@@ -1,19 +1,17 @@
-use std::sync::Arc;
-
 use anyhow::{bail, Context, Result};
 use bytes::BytesMut;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, ToSocketAddrs}};
 
-use crate::{handler::MessageHandler, message::Message, parser::parse_data, ServerConfig};
+use crate::{handler::MessageHandler, message::Message, parser::parse_data};
 
-pub async fn start_replication(server_state: Arc<ServerConfig>, leader_addr: impl ToSocketAddrs) -> Result<()>{
+pub async fn start_replication(listener_port: u16, leader_addr: impl ToSocketAddrs, mut handler: MessageHandler) -> Result<()>{
     let mut stream = TcpStream::connect(leader_addr).await?;
 
     send_command(MessageHandler::get_ping_command(), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
     MessageHandler::check_ping_reply(&reply)?;
 
-    send_command(MessageHandler::get_replconf_command("listening-port", server_state.listener_port), &mut stream).await?;
+    send_command(MessageHandler::get_replconf_command("listening-port", listener_port), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
     MessageHandler::check_replconf_reply(&reply).context("listening port")?;
 
@@ -25,12 +23,12 @@ pub async fn start_replication(server_state: Arc<ServerConfig>, leader_addr: imp
     let reply = get_reply(&mut stream).await?;
     MessageHandler::check_psync_reply(&reply)?;
 
-    //TODO: get rdb file
+    let _rdb_file = get_reply_raw(&mut stream).await?;
 
     loop {
         let repl_message = get_reply(&mut stream).await?;
-        println!("repl: {repl_message}");
-    }
+        handler.handle(repl_message).await?;
+     }
 }
 
 async fn send_command(command: Message, stream: &mut TcpStream) -> Result<()> {
@@ -38,12 +36,18 @@ async fn send_command(command: Message, stream: &mut TcpStream) -> Result<()> {
     Ok(())
 }
 
-async fn get_reply(stream: &mut TcpStream) -> Result<Message> {
+async fn get_reply_raw(stream: &mut TcpStream) -> Result<BytesMut> {
     let mut buffer = BytesMut::with_capacity(1024);
     let n = stream.read_buf(&mut buffer).await?;
     if n == 0 {
         bail!("connection closed by leader");
     }
 
-    Ok(parse_data(buffer.split())?)
+    Ok(buffer.split())
+}
+
+async fn get_reply(stream: &mut TcpStream) -> Result<Message> {
+    let buffer = get_reply_raw(stream).await?;
+
+    Ok(parse_data(buffer)?)
 }
