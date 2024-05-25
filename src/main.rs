@@ -7,6 +7,7 @@ use tokio::{net::ToSocketAddrs, sync::broadcast};
 
 use crate::handler::MessageHandler;
 
+mod command_parser;
 mod db;
 mod handler;
 mod message;

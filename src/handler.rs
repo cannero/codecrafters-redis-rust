@@ -1,28 +1,15 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use tokio::sync::broadcast::Sender;
 
-use crate::{db::Db, message::Message, ServerRole, ServerConfig};
+use crate::{command_parser::{parse_command, Command}, db::Db, message::Message, ServerConfig, ServerRole};
 
 pub struct MessageHandler {
     db: Arc<Db>,
     state: Arc<ServerConfig>,
     sender: Sender<Message>,
     replication_client_ack: bool,
-}
-
-fn get_expire_time(messages: &Vec<Message>) -> Result<Option<i64>> {
-    match messages.get(3) {
-        Some(_) => {
-            let time = messages[4].clone();
-            match time {
-                Message::BulkString(value) => Ok(Some(value.parse::<i64>().unwrap())),
-                m => bail!("unknown message for expire_time {}", m),
-            }
-        }
-        None => Ok(None),
-    }
 }
 
 impl MessageHandler {
@@ -41,64 +28,40 @@ impl MessageHandler {
     }
 
     pub async fn handle(&mut self, message: Message) -> Result<Vec<Message>> {
-        match message {
-            Message::Array(vec) if vec.len() > 0 => {
-                self.handle_array(vec).await
-            }
-            _ => bail!("don't know how to react to {}", message),
-        }
-    }
-
-    async fn handle_array(&mut self, vec: Vec<Message>) -> Result<Vec<Message>> {
-        let command = vec.first().context("at least one message must exist")?;
+        let command = parse_command(message)?;
         match command {
-            Message::BulkString(command_string) => {
-                let command_string = command_string.to_uppercase();
-                if command_string == "PING" {
-                    Ok(vec![Message::BulkString("PONG".to_string())])
-
-                } else if command_string == "ECHO" {
-                    Ok(vec![vec[1].clone()])
-
-                } else if command_string == "SET" {
-                    let key = vec[1].clone();
-                    let value = vec[2].clone();
-                    let expire_time = get_expire_time(&vec)?;
-                    self.db.set(key, value, expire_time).await?;
-                    let message = Message::SimpleString("OK".to_string());
-                    self.distribute_message(&Message::Array(vec.clone()));
-                    Ok(vec![message])
-
-                } else if command_string == "GET" {
-                    let key = vec[1].clone();
-                    match self.db.get(&key).await {
+            Command::Ping => Ok(vec![Message::BulkString("PONG".to_string())]),
+            Command::Echo(message) => Ok(vec![message]),
+            Command::Get { key } => {
+                match self.db.get(&key).await {
                         Some(value) => Ok(vec![value.clone()]),
                         None => Ok(vec![Message::Null])
-                    }
-
-                } else if command_string == "INFO" {
-                    let info_type = vec[1].clone();
-                    if info_type != Message::BulkString("replication".to_string()){
-                        bail!("unknown info type {}", info_type);
+                }
+            }
+            Command::Set { ref key, ref value, expire_time } => {
+                self.db.set(key.clone(), value.clone(), expire_time).await?;
+                let message = Message::SimpleString("OK".to_string());
+                self.distribute_message(&command.clone().to_message());
+                Ok(vec![message])
+            }
+            Command::Info { sections } => {
+                if sections.len() != 1 ||
+                    sections[0] != Message::BulkString("replication".to_string()){
+                        bail!("unknown section type {:?}", sections);
                     }
 
                     self.build_replication_info()
-
-                } else if command_string == "REPLCONF" {
-                    // for now just respond with ok
-                    Ok(vec![Message::SimpleString("OK".to_string())])
-
-                } else if command_string == "PSYNC" {
-                    self.replication_client_ack = true;
-                    Ok(vec![Message::SimpleString(format!("FULLRESYNC {} 0",
-                                                          self.state.master_replid)),
-                            Self::get_rdb_file()])
-
-                } else {
-                    bail!("unknown command {}", command)
-                }
             }
-            _ => bail!("unknown command type {}", command),
+            Command::Replconf => // for now just respond with okay
+                Ok(vec![Message::SimpleString("OK".to_string())]),
+
+            Command::Psync => {
+                self.replication_client_ack = true;
+                Ok(vec![Message::SimpleString(format!("FULLRESYNC {} 0",
+                                                      self.state.master_replid)),
+                        Self::get_rdb_file()])
+
+            }
         }
     }
 
@@ -270,18 +233,6 @@ mod tests {
         assert_eq!(value, result_get[0]);
     }
 
-    #[test]
-    fn test_get_expire_time() {
-        let messages = vec![
-            Message::BulkString("SET".to_string()),
-            Message::BulkString("key".to_string()),
-            Message::BulkString("value".to_string()),
-            Message::BulkString("PX".to_string()),
-            Message::BulkString("100".to_string()),
-        ];
-
-        assert_eq!(Some(100), get_expire_time(&messages).unwrap());
-    }
 
     #[tokio::test]
     async fn test_info_replication() {
