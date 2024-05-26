@@ -2,9 +2,16 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use bytes::BytesMut;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::broadcast:: Sender};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::broadcast::Sender,
+};
 
-use crate::{db::Db, handler::client_server::MessageHandler, message::Message, parser::parse_data, ServerConfig};
+use crate::{
+    db::Db, handler::client_server::MessageHandler, message::Message, parser::parse_data,
+    ServerConfig,
+};
 
 struct ServerState {
     handler: MessageHandler,
@@ -25,12 +32,13 @@ pub async fn start(config: Arc<ServerConfig>, db: Arc<Db>, tx: Sender<Message>) 
                 let tx_cloned = tx.clone();
                 let o_tx_cloned2 = Some(tx.clone());
                 tokio::spawn(async move {
-                    let state = ServerState{
+                    let state = ServerState {
                         handler: MessageHandler::new(db_cloned, config_cloned, tx_cloned),
                         stream,
                         sender: o_tx_cloned2,
                     };
-                    handle_connection(state).await
+                    handle_connection(state)
+                        .await
                         .unwrap_or_else(|error| eprintln!("{:?}", error));
                 });
             }
@@ -49,7 +57,7 @@ async fn handle_connection(mut state: ServerState) -> Result<()> {
 
         if n == 0 {
             println!("Connection closed by client");
-            return Ok(()); 
+            return Ok(());
         }
 
         let message = parse_data(buffer.split())?;
@@ -69,7 +77,7 @@ async fn handle_connection(mut state: ServerState) -> Result<()> {
     }
 }
 
-async fn handle_replication_client(mut state: ServerState) -> Result<()>{
+async fn handle_replication_client(mut state: ServerState) -> Result<()> {
     println!("upgrading to replication");
     let sender = state.sender.take().expect("sender must be set");
     // TODO: check if this is the correct logic to not have any receiver open.
@@ -84,7 +92,7 @@ async fn handle_replication_client(mut state: ServerState) -> Result<()>{
     }
 }
 
-async fn write_all(stream: &mut TcpStream, message: Message) -> Result<()>{
+async fn write_all(stream: &mut TcpStream, message: Message) -> Result<()> {
     stream.write_all(&message.to_data()).await?;
     Ok(())
 }

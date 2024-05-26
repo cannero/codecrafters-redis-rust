@@ -3,7 +3,12 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use tokio::sync::broadcast::Sender;
 
-use crate::{command_parser::{parse_command, Command}, db::Db, message::Message, ServerConfig, ServerRole};
+use crate::{
+    command_parser::{parse_command, Command},
+    db::Db,
+    message::Message,
+    ServerConfig, ServerRole,
+};
 
 use super::distribute_message;
 
@@ -16,7 +21,6 @@ pub struct MessageHandler {
 }
 
 impl MessageHandler {
-
     pub fn new(db: Arc<Db>, state: Arc<ServerConfig>, sender: Sender<Message>) -> Self {
         Self {
             db,
@@ -36,33 +40,40 @@ impl MessageHandler {
         match command {
             Command::Ping => Ok(vec![Message::BulkString("PONG".to_string())]),
             Command::Echo(message) => Ok(vec![message]),
-            Command::Get { key } => {
-                match self.db.get(&key).await {
-                        Some(value) => Ok(vec![value.clone()]),
-                        None => Ok(vec![Message::Null])
-                }
-            }
-            Command::Set { ref key, ref value, expire_time } => {
+            Command::Get { key } => match self.db.get(&key).await {
+                Some(value) => Ok(vec![value.clone()]),
+                None => Ok(vec![Message::Null]),
+            },
+            Command::Set {
+                ref key,
+                ref value,
+                expire_time,
+            } => {
                 self.db.set(key.clone(), value.clone(), expire_time).await?;
                 let message = Message::SimpleString("OK".to_string());
                 distribute_message(&self.sender, &command.clone().to_message());
                 Ok(vec![message])
             }
             Command::Info { sections } => {
-                if sections.len() != 1 ||
-                    sections[0] != Message::BulkString("replication".to_string()){
-                        bail!("unknown section type {:?}", sections);
-                    }
+                if sections.len() != 1
+                    || sections[0] != Message::BulkString("replication".to_string())
+                {
+                    bail!("unknown section type {:?}", sections);
+                }
 
-                    self.build_replication_info()
+                self.build_replication_info()
             }
-            Command::Replconf => // for now just respond with okay
-                Ok(vec![Message::SimpleString("OK".to_string())]),
+            Command::Replconf =>
+            // for now just respond with okay
+            {
+                Ok(vec![Message::SimpleString("OK".to_string())])
+            }
             Command::Psync => {
                 self.replication_client_ack = true;
-                Ok(vec![Message::SimpleString(format!("FULLRESYNC {} 0",
-                                                      self.state.master_replid)),
-                        Self::get_rdb_file()])
+                Ok(vec![
+                    Message::SimpleString(format!("FULLRESYNC {} 0", self.state.master_replid)),
+                    Self::get_rdb_file(),
+                ])
             }
         }
     }
@@ -73,18 +84,17 @@ impl MessageHandler {
             ServerRole::Follower => "slave",
         };
 
-        Ok(vec![Message::BulkString(format!("role:{}\nmaster_replid:{}\nmaster_repl_offset:{}",
-                                       role,
-                                       self.state.master_replid,
-                                       self.state.master_repl_offset))])
+        Ok(vec![Message::BulkString(format!(
+            "role:{}\nmaster_replid:{}\nmaster_repl_offset:{}",
+            role, self.state.master_replid, self.state.master_repl_offset
+        ))])
     }
 
     fn get_rdb_file() -> Message {
         let hex_string = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
         let bytes = (0..hex_string.len())
             .step_by(2)
-            .map(|i| u8::from_str_radix(&hex_string[i..i + 2], 16)
-                 .expect("hex_string is invalid"))
+            .map(|i| u8::from_str_radix(&hex_string[i..i + 2], 16).expect("hex_string is invalid"))
             .collect::<Vec<_>>();
         Message::RdbFile(bytes)
     }
@@ -124,11 +134,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_ping() {
-        let message = Message::Array(vec![
-            Message::BulkString("ping".to_string()),
-        ]);
+        let message = Message::Array(vec![Message::BulkString("ping".to_string())]);
 
-        assert_eq!(Message::BulkString("PONG".to_string()), handle_test(message).await);
+        assert_eq!(
+            Message::BulkString("PONG".to_string()),
+            handle_test(message).await
+        );
     }
 
     #[tokio::test]
@@ -138,7 +149,10 @@ mod tests {
             Message::BulkString("some data".to_string()),
         ]);
 
-        assert_eq!(Message::BulkString("some data".to_string()), handle_test(message).await);
+        assert_eq!(
+            Message::BulkString("some data".to_string()),
+            handle_test(message).await
+        );
     }
 
     #[tokio::test]
@@ -162,16 +176,12 @@ mod tests {
 
         assert_eq!(Message::SimpleString("OK".to_string()), result_set[0]);
 
-        let message_get = Message::Array(vec![
-            Message::BulkString("GET".to_string()),
-            key,
-        ]);
+        let message_get = Message::Array(vec![Message::BulkString("GET".to_string()), key]);
 
         let result_get = handler.handle(message_get).await.unwrap();
 
         assert_eq!(value, result_get[0]);
     }
-
 
     #[tokio::test]
     async fn test_info_replication() {
@@ -181,8 +191,9 @@ mod tests {
             Message::BulkString("replication".to_string()),
         ];
 
-        if let Message::BulkString(result) = handler.handle(Message::Array(messages))
-            .await.unwrap()[0].clone() {
+        if let Message::BulkString(result) =
+            handler.handle(Message::Array(messages)).await.unwrap()[0].clone()
+        {
             assert!(result.contains("master_replid"));
         } else {
             panic!("Info command should return a bulk string");
@@ -192,7 +203,10 @@ mod tests {
     #[tokio::test]
     async fn test_handle_psync() {
         let mut handler = create_handler();
-        let result = handler.handle(Command::get_psync_command("id", 123)).await.unwrap();
+        let result = handler
+            .handle(Command::get_psync_command("id", 123))
+            .await
+            .unwrap();
         assert_eq!(2, result.len());
     }
 

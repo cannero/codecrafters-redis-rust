@@ -1,17 +1,31 @@
 use anyhow::{bail, Context, Result};
 use bytes::BytesMut;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, ToSocketAddrs}};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpStream, ToSocketAddrs},
+};
 
-use crate::{command_parser::Command, handler::replication::ReplicationHandler, message::Message, parser::parse_data};
+use crate::{
+    command_parser::Command, handler::replication::ReplicationHandler, message::Message,
+    parser::parse_data,
+};
 
-pub async fn start_replication(listener_port: u16, leader_addr: impl ToSocketAddrs, mut handler: ReplicationHandler) -> Result<()>{
+pub async fn start_replication(
+    listener_port: u16,
+    leader_addr: impl ToSocketAddrs,
+    mut handler: ReplicationHandler,
+) -> Result<()> {
     let mut stream = TcpStream::connect(leader_addr).await?;
 
     send_command(Command::get_ping_command(), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
     ReplicationHandler::check_ping_reply(&reply)?;
 
-    send_command(Command::get_replconf_command("listening-port", listener_port), &mut stream).await?;
+    send_command(
+        Command::get_replconf_command("listening-port", listener_port),
+        &mut stream,
+    )
+    .await?;
     let reply = get_reply(&mut stream).await?;
     ReplicationHandler::check_replconf_reply(&reply).context("listening port")?;
 
@@ -28,7 +42,7 @@ pub async fn start_replication(listener_port: u16, leader_addr: impl ToSocketAdd
     loop {
         let repl_message = get_reply(&mut stream).await?;
         handler.handle(repl_message).await?;
-     }
+    }
 }
 
 async fn send_command(command: Message, stream: &mut TcpStream) -> Result<()> {

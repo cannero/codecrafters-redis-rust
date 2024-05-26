@@ -3,7 +3,11 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use tokio::sync::broadcast::Sender;
 
-use crate::{command_parser::{parse_command, Command}, db::Db, message::Message};
+use crate::{
+    command_parser::{parse_command, Command},
+    db::Db,
+    message::Message,
+};
 
 use super::distribute_message;
 
@@ -14,49 +18,55 @@ pub struct ReplicationHandler {
 
 impl ReplicationHandler {
     pub fn new(db: Arc<Db>, sender: Sender<Message>) -> Self {
-        Self {
-            db,
-            sender,
-        }
+        Self { db, sender }
     }
 
     pub async fn handle(&mut self, message: Message) -> Result<Option<Message>> {
         let command = parse_command(message)?;
         match command {
-            Command::Set { ref key, ref value, expire_time } => {
+            Command::Set {
+                ref key,
+                ref value,
+                expire_time,
+            } => {
                 self.db.set(key.clone(), value.clone(), expire_time).await?;
                 distribute_message(&self.sender, &command.clone().to_message());
                 Ok(None)
             }
-            Command::Ping |
-            Command::Echo(_) |
-            Command::Get { .. } |
-            Command::Info { .. } |
-            Command::Psync |
-            Command::Replconf => bail!("wrong command for replication {}", command.to_message()),
+            Command::Ping
+            | Command::Echo(_)
+            | Command::Get { .. }
+            | Command::Info { .. }
+            | Command::Psync
+            | Command::Replconf => bail!("wrong command for replication {}", command.to_message()),
         }
     }
 
     pub fn check_ping_reply(message: &Message) -> Result<()> {
         match message {
-            Message::BulkString(resp) |
-            Message::SimpleString(resp) if resp.to_uppercase() == "PONG" => Ok(()),
+            Message::BulkString(resp) | Message::SimpleString(resp)
+                if resp.to_uppercase() == "PONG" =>
+            {
+                Ok(())
+            }
             _ => bail!("wrong ping reply: {}", message),
         }
     }
 
     pub fn check_replconf_reply(message: &Message) -> Result<()> {
         match message {
-            Message::BulkString(resp) |
-            Message::SimpleString(resp) if resp.to_uppercase() == "OK" => Ok(()),
+            Message::BulkString(resp) | Message::SimpleString(resp)
+                if resp.to_uppercase() == "OK" =>
+            {
+                Ok(())
+            }
             _ => bail!("wrong replconf reply: {}", message),
         }
     }
 
     pub fn check_psync_reply(message: &Message) -> Result<()> {
         match message {
-            Message::SimpleString(resp) if resp.to_uppercase()
-                .starts_with("FULLRESYNC") => Ok(()),
+            Message::SimpleString(resp) if resp.to_uppercase().starts_with("FULLRESYNC") => Ok(()),
             _ => bail!("wrong psync reply: {}", message),
         }
     }
@@ -66,7 +76,10 @@ impl ReplicationHandler {
 mod tests {
     use std::time::Duration;
 
-    use tokio::{sync::broadcast::{self, Receiver}, time::timeout};
+    use tokio::{
+        sync::broadcast::{self, Receiver},
+        time::timeout,
+    };
 
     use crate::handler::test_functions::get_set_command;
 

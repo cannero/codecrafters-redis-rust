@@ -1,7 +1,7 @@
 use core::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Message{
+pub enum Message {
     Null,
     SimpleString(String),
     BulkString(String),
@@ -10,7 +10,7 @@ pub enum Message{
     RdbFile(Vec<u8>),
 }
 
-impl fmt::Display for Message{
+impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Message::Null => write!(f, "null"),
@@ -23,7 +23,7 @@ impl fmt::Display for Message{
                 } else {
                     write!(f, "array with `{}` items, first: `{}`", vec.len(), vec[0])
                 }
-            },
+            }
             Message::RdbFile(content) => write!(f, "rdb file, len {}", content.len()),
         }
     }
@@ -59,9 +59,7 @@ impl Message {
                 add_cr_nl(&mut data);
                 data
             }
-            Message::NullBulkString => {
-                b"$-1\r\n".to_vec()
-            }
+            Message::NullBulkString => b"$-1\r\n".to_vec(),
             Message::Array(arr) => {
                 let mut data = vec![b'*'];
                 add_len(arr.len(), &mut data);
@@ -115,4 +113,3 @@ mod tests {
         assert_eq!(expected, m.to_data());
     }
 }
-

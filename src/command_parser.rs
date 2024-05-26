@@ -2,7 +2,6 @@ use anyhow::{bail, Context, Result};
 
 use crate::message::Message;
 
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
     Ping,
@@ -26,18 +25,23 @@ impl Command {
     pub fn to_message(&self) -> Message {
         let inner = match self {
             Command::Ping => vec![Message::BulkString("PING".to_string())],
-            Command::Echo(message) => vec![Message::BulkString("ECHO".to_string()),
-                                           message.clone()],
-            Command::Get { key } => vec![Message::BulkString("GET".to_string()),
-                                         key.clone()],
-            Command::Set { key, value, expire_time } => {
-                let mut set_messages = vec![Message::BulkString("SET".to_string()),
-                                            key.clone(),
-                                            value.clone(),
+            Command::Echo(message) => {
+                vec![Message::BulkString("ECHO".to_string()), message.clone()]
+            }
+            Command::Get { key } => vec![Message::BulkString("GET".to_string()), key.clone()],
+            Command::Set {
+                key,
+                value,
+                expire_time,
+            } => {
+                let mut set_messages = vec![
+                    Message::BulkString("SET".to_string()),
+                    key.clone(),
+                    value.clone(),
                 ];
                 if let Some(time) = expire_time {
-                        set_messages.push(Message::BulkString("SET".to_string()));
-                        set_messages.push(Message::BulkString(time.to_string()));
+                    set_messages.push(Message::BulkString("SET".to_string()));
+                    set_messages.push(Message::BulkString(time.to_string()));
                 }
 
                 set_messages
@@ -51,9 +55,7 @@ impl Command {
     }
 
     pub fn get_ping_command() -> Message {
-        Message::Array(vec![
-            Message::BulkString("PING".to_string()),
-        ])
+        Message::Array(vec![Message::BulkString("PING".to_string())])
     }
 
     pub fn get_replconf_command<T1: ToString, T2: ToString>(name: T1, value: T2) -> Message {
@@ -71,14 +73,11 @@ impl Command {
             Message::BulkString(master_offset.to_string()),
         ])
     }
-
 }
 
 pub fn parse_command(message: Message) -> Result<Command> {
     match message {
-        Message::Array(vec) if vec.len() > 0 => {
-            handle_array(vec)
-        }
+        Message::Array(vec) if vec.len() > 0 => handle_array(vec),
         _ => bail!("unknown message {} for command", message),
     }
 }
@@ -93,15 +92,21 @@ fn handle_array(vec: Vec<Message>) -> Result<Command> {
                 let key = vec[1].clone();
                 let value = vec[2].clone();
                 let expire_time = get_expire_time(&vec)?;
-                Ok(Command::Set { key, value, expire_time, })
+                Ok(Command::Set {
+                    key,
+                    value,
+                    expire_time,
+                })
             }
-            "GET" => Ok(Command::Get{key: vec[1].clone()}),
-            "INFO" => {
-                match vec.get(1){
-                    Some(ele) => Ok(Command::Info { sections: vec![ele.clone()] }),
-                    None => Ok(Command::Info { sections: vec![] }),
-                }
-            }
+            "GET" => Ok(Command::Get {
+                key: vec[1].clone(),
+            }),
+            "INFO" => match vec.get(1) {
+                Some(ele) => Ok(Command::Info {
+                    sections: vec![ele.clone()],
+                }),
+                None => Ok(Command::Info { sections: vec![] }),
+            },
             "REPLCONF" => Ok(Command::Replconf),
             "PSYNC" => Ok(Command::Psync),
             _ => bail!("unknown command {}", command_string),
@@ -128,7 +133,11 @@ fn get_expire_time(messages: &Vec<Message>) -> Result<Option<i64>> {
 mod tests {
     use super::*;
 
-    fn get_set_message(key: &str, value: &str, expire_time: Option<i64>) -> (Message, Message, Message) {
+    fn get_set_message(
+        key: &str,
+        value: &str,
+        expire_time: Option<i64>,
+    ) -> (Message, Message, Message) {
         let key = Message::BulkString(key.to_string());
         let value = Message::BulkString(value.to_string());
 
@@ -151,11 +160,12 @@ mod tests {
         (key, value, message_set)
     }
 
-
     #[test]
     fn test_get_expire_time() {
         let expire_time = 100;
-        if let (_, _, Message::Array(vec_messages)) = get_set_message("key", "val", Some(expire_time)){
+        if let (_, _, Message::Array(vec_messages)) =
+            get_set_message("key", "val", Some(expire_time))
+        {
             assert_eq!(Some(expire_time), get_expire_time(&vec_messages).unwrap());
         } else {
             unreachable!();
@@ -168,9 +178,7 @@ mod tests {
 
     #[test]
     fn test_ping_command() {
-        let message = Message::Array(vec![
-            Message::BulkString("ping".to_string()),
-        ]);
+        let message = Message::Array(vec![Message::BulkString("ping".to_string())]);
 
         assert_command(Command::Ping, message);
     }
@@ -178,36 +186,41 @@ mod tests {
     #[test]
     fn test_echo_command() {
         let data = Message::BulkString("some data".to_string());
-        let message = Message::Array(vec![
-            Message::BulkString("Echo".to_string()),
-            data.clone(),
-        ]);
+        let message = Message::Array(vec![Message::BulkString("Echo".to_string()), data.clone()]);
 
         assert_command(Command::Echo(data), message);
     }
 
     #[test]
     fn test_set_command() {
-
         let (key, value, message_set) = get_set_message("the_key", "the_value", None);
 
-        assert_command(Command::Set { key, value, expire_time: None}, message_set);
+        assert_command(
+            Command::Set {
+                key,
+                value,
+                expire_time: None,
+            },
+            message_set,
+        );
 
         let (key, value, message_set) = get_set_message("the_key", "the_value", Some(123));
 
-        assert_command(Command::Set { key, value, expire_time: Some(123)}, message_set);
+        assert_command(
+            Command::Set {
+                key,
+                value,
+                expire_time: Some(123),
+            },
+            message_set,
+        );
     }
 
     #[test]
     fn test_get_command() {
         let key = Message::BulkString("key1".to_string());
-        let message_get = Message::Array(vec![
-            Message::BulkString("GET".to_string()),
-            key.clone(),
-        ]);
+        let message_get = Message::Array(vec![Message::BulkString("GET".to_string()), key.clone()]);
 
-        assert_command(Command::Get { key,}, message_get);
+        assert_command(Command::Get { key }, message_get);
     }
-
 }
-

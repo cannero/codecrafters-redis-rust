@@ -28,13 +28,18 @@ impl Db {
                     // TODO: remove entry
                     Some(Message::NullBulkString)
                 }
-            },
+            }
             None => None,
         }
     }
 
     // expire time in milliseconds
-    pub async fn set(&self, key: Message, value: Message, expire_milliseconds: Option<i64>) -> Result<()>{
+    pub async fn set(
+        &self,
+        key: Message,
+        value: Message,
+        expire_milliseconds: Option<i64>,
+    ) -> Result<()> {
         let mut map = self.storage.write().await;
 
         let expire_time = match expire_milliseconds {

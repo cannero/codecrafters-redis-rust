@@ -41,7 +41,7 @@ impl Args {
                     Err(err) => bail!(err),
                 }
             }
-            None => bail!("replicaof not set")
+            None => bail!("replicaof not set"),
         }
     }
 }
@@ -61,7 +61,6 @@ struct ServerConfig {
 
 #[tokio::main]
 async fn main() {
-
     let args = Args::parse();
     let port = args.port;
 
@@ -69,7 +68,7 @@ async fn main() {
 
     let db = Arc::new(Db::new());
     let config = Arc::new(ServerConfig {
-        role : if args.replicaof.is_some() {
+        role: if args.replicaof.is_some() {
             ServerRole::Follower
         } else {
             ServerRole::Leader
@@ -88,11 +87,14 @@ async fn main() {
         let tx_cloned = tx.clone();
         let handler = ReplicationHandler::new(db_cloned, tx_cloned);
         let listener_port = config.listener_port;
-        tokio::spawn(async move{
-            replication_client::start_replication(listener_port, leader_addr, handler).await
+        tokio::spawn(async move {
+            replication_client::start_replication(listener_port, leader_addr, handler)
+                .await
                 .unwrap_or_else(|error| eprintln!("replication: {:?}", error));
         });
     }
 
-    server::start(config, db, tx).await.expect("running server failed");
+    server::start(config, db, tx)
+        .await
+        .expect("running server failed");
 }
