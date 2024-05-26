@@ -5,7 +5,7 @@ use clap::Parser;
 use db::Db;
 use tokio::{net::ToSocketAddrs, sync::broadcast};
 
-use crate::handler::MessageHandler;
+use crate::handler::replication::ReplicationHandler;
 
 mod command_parser;
 mod db;
@@ -84,10 +84,9 @@ async fn main() {
 
     if config.role == ServerRole::Follower {
         let leader_addr = args.get_leader_addr().expect("replicaof not set correctly");
-        let config_cloned = config.clone();
         let db_cloned = db.clone();
         let tx_cloned = tx.clone();
-        let handler = MessageHandler::new(db_cloned, config_cloned, tx_cloned);
+        let handler = ReplicationHandler::new(db_cloned, tx_cloned);
         let listener_port = config.listener_port;
         tokio::spawn(async move{
             replication_client::start_replication(listener_port, leader_addr, handler).await

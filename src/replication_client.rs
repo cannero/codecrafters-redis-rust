@@ -2,26 +2,26 @@ use anyhow::{bail, Context, Result};
 use bytes::BytesMut;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, ToSocketAddrs}};
 
-use crate::{handler::MessageHandler, message::Message, parser::parse_data};
+use crate::{command_parser::Command, handler::replication::ReplicationHandler, message::Message, parser::parse_data};
 
-pub async fn start_replication(listener_port: u16, leader_addr: impl ToSocketAddrs, mut handler: MessageHandler) -> Result<()>{
+pub async fn start_replication(listener_port: u16, leader_addr: impl ToSocketAddrs, mut handler: ReplicationHandler) -> Result<()>{
     let mut stream = TcpStream::connect(leader_addr).await?;
 
-    send_command(MessageHandler::get_ping_command(), &mut stream).await?;
+    send_command(Command::get_ping_command(), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
-    MessageHandler::check_ping_reply(&reply)?;
+    ReplicationHandler::check_ping_reply(&reply)?;
 
-    send_command(MessageHandler::get_replconf_command("listening-port", listener_port), &mut stream).await?;
+    send_command(Command::get_replconf_command("listening-port", listener_port), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
-    MessageHandler::check_replconf_reply(&reply).context("listening port")?;
+    ReplicationHandler::check_replconf_reply(&reply).context("listening port")?;
 
-    send_command(MessageHandler::get_replconf_command("capa", "psync2"), &mut stream).await?;
+    send_command(Command::get_replconf_command("capa", "psync2"), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
-    MessageHandler::check_replconf_reply(&reply).context("capa")?;
+    ReplicationHandler::check_replconf_reply(&reply).context("capa")?;
 
-    send_command(MessageHandler::get_psync_command("?", -1), &mut stream).await?;
+    send_command(Command::get_psync_command("?", -1), &mut stream).await?;
     let reply = get_reply(&mut stream).await?;
-    MessageHandler::check_psync_reply(&reply)?;
+    ReplicationHandler::check_psync_reply(&reply)?;
 
     let _rdb_file = get_reply_raw(&mut stream).await?;
 

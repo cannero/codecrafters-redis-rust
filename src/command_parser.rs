@@ -35,13 +35,11 @@ impl Command {
                                             key.clone(),
                                             value.clone(),
                 ];
-                match expire_time {
-                    Some(time) => {
+                if let Some(time) = expire_time {
                         set_messages.push(Message::BulkString("SET".to_string()));
                         set_messages.push(Message::BulkString(time.to_string()));
-                    }
-                    _ => (),
-                };
+                }
+
                 set_messages
             }
             Command::Replconf => unimplemented!(),
@@ -51,6 +49,29 @@ impl Command {
 
         Message::Array(inner)
     }
+
+    pub fn get_ping_command() -> Message {
+        Message::Array(vec![
+            Message::BulkString("PING".to_string()),
+        ])
+    }
+
+    pub fn get_replconf_command<T1: ToString, T2: ToString>(name: T1, value: T2) -> Message {
+        Message::Array(vec![
+            Message::BulkString("REPLCONF".to_string()),
+            Message::BulkString(name.to_string()),
+            Message::BulkString(value.to_string()),
+        ])
+    }
+
+    pub fn get_psync_command(master_replid: &str, master_offset: i64) -> Message {
+        Message::Array(vec![
+            Message::BulkString("PSYNC".to_string()),
+            Message::BulkString(master_replid.to_string()),
+            Message::BulkString(master_offset.to_string()),
+        ])
+    }
+
 }
 
 pub fn parse_command(message: Message) -> Result<Command> {

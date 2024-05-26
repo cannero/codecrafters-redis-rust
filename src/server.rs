@@ -4,7 +4,7 @@ use anyhow::Result;
 use bytes::BytesMut;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::broadcast:: Sender};
 
-use crate::{db::Db, handler::MessageHandler, message::Message, parser::parse_data, ServerConfig};
+use crate::{db::Db, handler::client_server::MessageHandler, message::Message, parser::parse_data, ServerConfig};
 
 struct ServerState {
     handler: MessageHandler,
@@ -72,6 +72,9 @@ async fn handle_connection(mut state: ServerState) -> Result<()> {
 async fn handle_replication_client(mut state: ServerState) -> Result<()>{
     println!("upgrading to replication");
     let sender = state.sender.take().expect("sender must be set");
+    // TODO: check if this is the correct logic to not have any receiver open.
+    // The main goal is to open the receiver when it is needed, for that
+    // the sender is used. Does a resubscribe lead to the receiver to just fill up?
     let mut rx = sender.subscribe();
     std::mem::drop(sender);
 
