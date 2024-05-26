@@ -17,7 +17,10 @@ pub enum Command {
     Info {
         sections: Vec<Message>,
     },
-    Replconf,
+    Replconf {
+        name: String,
+        value: Message,
+    },
     Psync,
 }
 
@@ -46,7 +49,7 @@ impl Command {
 
                 set_messages
             }
-            Command::Replconf => unimplemented!(),
+            Command::Replconf { .. } => unimplemented!(),
             Command::Psync => unimplemented!(),
             Command::Info { sections: _ } => unimplemented!(),
         };
@@ -107,7 +110,13 @@ fn handle_array(vec: Vec<Message>) -> Result<Command> {
                 }),
                 None => Ok(Command::Info { sections: vec![] }),
             },
-            "REPLCONF" => Ok(Command::Replconf),
+            "REPLCONF" => {
+                if let Message::BulkString(name) = vec[1].clone() {
+                    Ok(Command::Replconf { name, value: vec[2].clone() })
+                } else {
+                    bail!("First part of replconf should be bulk string");
+                }
+            },
             "PSYNC" => Ok(Command::Psync),
             _ => bail!("unknown command {}", command_string),
         }

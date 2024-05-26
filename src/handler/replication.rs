@@ -33,12 +33,18 @@ impl ReplicationHandler {
                 distribute_message(&self.sender, &command.clone().to_message());
                 Ok(None)
             }
+            Command::Replconf { name, value: _ } => {
+                if name.to_uppercase() != "GETACK" {
+                    bail!("Only GETACK implemented for repl");
+                }
+
+                Ok(Some(Command::get_replconf_command("ACK", 0)))
+            }
             Command::Ping
             | Command::Echo(_)
             | Command::Get { .. }
             | Command::Info { .. }
-            | Command::Psync
-            | Command::Replconf => bail!("wrong command for replication {}", command.to_message()),
+            | Command::Psync => bail!("wrong command for replication {}", command.to_message()),
         }
     }
 
@@ -103,5 +109,16 @@ mod tests {
             Ok(Err(_)) => panic!("message not received"),
             Err(_) => panic!("nothing received"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_ackget_returns_message() -> Result<()> {
+        let (mut handler, _rx) = create_handler_and_recx();
+        let replmessage = Command::get_replconf_command("GETACK", "*");
+        let expected_return = Some(Command::get_replconf_command("ACK", 0));
+
+        assert_eq!(expected_return, handler.handle(replmessage).await?);
+
+        Ok(())
     }
 }

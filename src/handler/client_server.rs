@@ -63,7 +63,7 @@ impl MessageHandler {
 
                 self.build_replication_info()
             }
-            Command::Replconf =>
+            Command::Replconf { .. } =>
             // for now just respond with okay
             {
                 Ok(vec![Message::SimpleString("OK".to_string())])
