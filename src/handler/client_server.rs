@@ -42,7 +42,7 @@ impl MessageHandler {
             Command::Echo(message) => Ok(vec![message]),
             Command::Get { key } => match self.db.get(&key).await {
                 Some(value) => Ok(vec![value.clone()]),
-                None => Ok(vec![Message::Null]),
+                None => Ok(vec![Message::NullBulkString]),
             },
             Command::Set {
                 ref key,

@@ -38,15 +38,15 @@ pub async fn start_replication(
     ReplicationHandler::check_psync_reply(&reply)?;
 
     let _rdb_file = read_from_leader_raw(&mut stream).await?;
-    println!("rdb received");
+    //println!("rdb received");
     loop {
         let repl_message = read_from_leader(&mut stream).await?;
-        println!("next one {}", repl_message);
+        //println!("next one {}", repl_message);
         if let Some(reply) = handler.handle(repl_message).await? {
-            println!("reply {}", reply);
+            //println!("reply {}", reply);
             send_message(reply, &mut stream).await?;
         } else {
-            println!("must not be handled");
+            //println!("must not be handled");
         }
     }
 }
