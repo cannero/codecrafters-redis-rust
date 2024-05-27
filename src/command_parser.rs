@@ -112,11 +112,14 @@ fn handle_array(vec: Vec<Message>) -> Result<Command> {
             },
             "REPLCONF" => {
                 if let Message::BulkString(name) = vec[1].clone() {
-                    Ok(Command::Replconf { name, value: vec[2].clone() })
+                    Ok(Command::Replconf {
+                        name,
+                        value: vec[2].clone(),
+                    })
                 } else {
                     bail!("First part of replconf should be bulk string");
                 }
-            },
+            }
             "PSYNC" => Ok(Command::Psync),
             _ => bail!("unknown command {}", command_string),
         }

@@ -60,15 +60,16 @@ async fn handle_connection(mut state: ServerState) -> Result<()> {
             return Ok(());
         }
 
-        let message = parse_data(buffer.split())?;
+        let messages = parse_data(buffer.split())?;
 
-        println!("Received from client: {}", message);
+        for message in messages {
+            println!("Received from client: {}", message);
+            let response = state.handler.handle(message).await?;
 
-        let response = state.handler.handle(message).await?;
-
-        for message in response {
-            println!("Responding: {}", message);
-            write_all(&mut state.stream, message).await?;
+            for message in response {
+                println!("Responding: {}", message);
+                write_all(&mut state.stream, message).await?;
+            }
         }
 
         if state.handler.replication_client_acknowleged() {

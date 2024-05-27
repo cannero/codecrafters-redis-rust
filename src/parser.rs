@@ -18,25 +18,26 @@ pub enum ParseError {
     UnknownMessage(char),
     #[error("no data was passed")]
     NoData,
-    #[error("data remaining `{0:?}`")]
-    DataRemaining(Bytes),
 }
 
 type Result<T> = std::result::Result<T, ParseError>;
 
 type ParsedData = (Message, BytesMut);
 
-pub fn parse_data(data: BytesMut) -> Result<Message> {
-    match parse(data) {
-        Ok((message, rest)) => {
-            if rest.len() > 0 {
-                Err(ParseError::DataRemaining(rest.freeze()))
-            } else {
-                Ok(message)
+pub fn parse_data(mut data: BytesMut) -> Result<Vec<Message>> {
+    let mut result = vec![];
+
+    while data.len() > 0 {
+        match parse(data) {
+            Ok((message, rest)) => {
+                result.push(message);
+                data = rest;
             }
+            Err(err) => return Err(err),
         }
-        Err(err) => Err(err),
     }
+
+    Ok(result)
 }
 
 fn parse(mut data: BytesMut) -> Result<ParsedData> {
@@ -281,6 +282,26 @@ mod tests {
         assert_eq!(
             parse(data),
             Ok((Message::SimpleString("simple".to_string()), BytesMut::new()))
+        );
+    }
+
+    #[test]
+    fn test_parse_data_multiple_messages() {
+        let data = str_to_bytes("*3\r\n$3\r\nSET\r\n$3\r\nbar\r\n$3\r\n456\r\n*3\r\n$3\r\nSET\r\n$3\r\nbaz\r\n$3\r\n789\r\n");
+        assert_eq!(
+            parse_data(data).unwrap(),
+            vec![
+                Message::Array(vec![
+                    Message::BulkString("SET".to_string()),
+                    Message::BulkString("bar".to_string()),
+                    Message::BulkString("456".to_string()),
+                ]),
+                Message::Array(vec![
+                    Message::BulkString("SET".to_string()),
+                    Message::BulkString("baz".to_string()),
+                    Message::BulkString("789".to_string()),
+                ]),
+            ]
         );
     }
 }

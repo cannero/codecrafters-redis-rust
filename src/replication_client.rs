@@ -18,7 +18,7 @@ pub async fn start_replication(
     let mut stream = TcpStream::connect(leader_addr).await?;
 
     send_message(Command::get_ping_command(), &mut stream).await?;
-    let reply = read_from_leader(&mut stream).await?;
+    let reply = get_reply(&mut stream).await.context("leader ping")?;
     ReplicationHandler::check_ping_reply(&reply)?;
 
     send_message(
@@ -26,27 +26,25 @@ pub async fn start_replication(
         &mut stream,
     )
     .await?;
-    let reply = read_from_leader(&mut stream).await?;
-    ReplicationHandler::check_replconf_reply(&reply).context("listening port")?;
+    let reply = get_reply(&mut stream).await.context("replconf port")?;
+    ReplicationHandler::check_replconf_reply(&reply).context("replconf listening port")?;
 
     send_message(Command::get_replconf_command("capa", "psync2"), &mut stream).await?;
-    let reply = read_from_leader(&mut stream).await?;
+    let reply = get_reply(&mut stream).await.context("replconf capa")?;
     ReplicationHandler::check_replconf_reply(&reply).context("capa")?;
 
     send_message(Command::get_psync_command("?", -1), &mut stream).await?;
-    let reply = read_from_leader(&mut stream).await?;
+    let reply = get_reply(&mut stream).await.context("psync")?;
     ReplicationHandler::check_psync_reply(&reply)?;
 
-    let _rdb_file = read_from_leader_raw(&mut stream).await?;
-    //println!("rdb received");
+    let _rdb_file = read_from_leader_raw(&mut stream).await.context("replication rdb file")?;
+
     loop {
-        let repl_message = read_from_leader(&mut stream).await?;
-        //println!("next one {}", repl_message);
-        if let Some(reply) = handler.handle(repl_message).await? {
-            //println!("reply {}", reply);
-            send_message(reply, &mut stream).await?;
-        } else {
-            //println!("must not be handled");
+        let repl_messages = read_from_leader(&mut stream).await?;
+        for message in repl_messages {
+            if let Some(reply) = handler.handle(message).await? {
+                send_message(reply, &mut stream).await?;
+            }
         }
     }
 }
@@ -66,8 +64,17 @@ async fn read_from_leader_raw(stream: &mut TcpStream) -> Result<BytesMut> {
     Ok(buffer.split())
 }
 
-async fn read_from_leader(stream: &mut TcpStream) -> Result<Message> {
+async fn read_from_leader(stream: &mut TcpStream) -> Result<Vec<Message>> {
     let buffer = read_from_leader_raw(stream).await?;
 
     Ok(parse_data(buffer)?)
+}
+
+async fn get_reply(stream: &mut TcpStream) -> Result<Message> {
+    let mut res = read_from_leader(stream).await?;
+    if res.len() != 1 {
+        bail!("Exactly one reply expected");
+    }
+
+    Ok(res.swap_remove(0))
 }

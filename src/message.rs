@@ -2,7 +2,7 @@ use core::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Message {
-    Null,
+    //    Null,
     SimpleString(String),
     BulkString(String),
     NullBulkString,
@@ -13,7 +13,7 @@ pub enum Message {
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Message::Null => write!(f, "null"),
+            // Message::Null => write!(f, "null"),
             Message::SimpleString(the_str) => write!(f, "simple string `{}`", the_str),
             Message::BulkString(the_str) => write!(f, "bulk string `{}`", the_str),
             Self::NullBulkString => write!(f, "null bulk string"),
@@ -43,9 +43,9 @@ fn add_len(len: usize, data: &mut Vec<u8>) {
 impl Message {
     pub fn to_data(&self) -> Vec<u8> {
         match self {
-            Message::Null => {
-                vec![b'_', b'\r', b'\n']
-            }
+            // Message::Null => {
+            //     vec![b'_', b'\r', b'\n']
+            // }
             Message::SimpleString(the_str) => {
                 let mut data = vec![b'+'];
                 data.extend_from_slice(the_str.as_bytes());

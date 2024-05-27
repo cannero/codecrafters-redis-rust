@@ -163,7 +163,7 @@ mod tests {
             Message::BulkString("key1".to_string()),
         ]);
 
-        assert_eq!(Message::Null, handle_test(message).await);
+        assert_eq!(Message::NullBulkString, handle_test(message).await);
     }
 
     #[tokio::test]
