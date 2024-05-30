@@ -81,12 +81,15 @@ fn parse_bulk_string(mut data: BytesMut) -> Result<ParsedData> {
         _ => match get_size(data) {
             Ok((size, mut data)) => {
                 const REDIS_MAGIC: &[u8; 5] = b"REDIS";
-                if data.len() == size && &data[..5] == REDIS_MAGIC
+                if size > 5
+                    // the rdb file has no ending linebreak
+                    && (data.len() == size || &data[size + 1..size + 2] != b"\r\n")
+                    && &data[..5] == REDIS_MAGIC
                 {
-                    // bit of a hack to check for rdb file,
-                    // it must be the last message in a stream as there is no check
-                    // for the start of another message.
-                    return Ok((Message::RdbFile(data.to_vec()), BytesMut::new()));
+                    return Ok((
+                        Message::RdbFile(data[..size].to_vec()),
+                        data.split_off(size),
+                    ));
                 }
 
                 let bulk_string = String::from_utf8(data[..size].to_vec())?;
@@ -157,6 +160,8 @@ fn find_linebreak(data: &[u8]) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const RDB_HEX: &str = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
 
     fn str_to_bytes(input: &str) -> BytesMut {
         BytesMut::from(input)
@@ -316,9 +321,22 @@ mod tests {
 
     #[test]
     fn test_parse_data_rdb_file() {
-        let rdb = Message::rdb_file_from_hex("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2");
+        let rdb = Message::rdb_file_from_hex(RDB_HEX);
         let data = rdb.to_data();
 
         assert_eq!(parse_data(BytesMut::from(&data[..])).unwrap()[0], rdb);
+    }
+
+    #[test]
+    fn test_parse_data_rdb_file_and_message() {
+        let rdb = Message::rdb_file_from_hex(RDB_HEX);
+        let mut data = rdb.to_data();
+        let message2 = Message::SimpleString("theother".to_string());
+        data.extend_from_slice(&message2.to_data());
+
+        assert_eq!(
+            parse_data(BytesMut::from(&data[..])).unwrap(),
+            vec![rdb, message2]
+        );
     }
 }

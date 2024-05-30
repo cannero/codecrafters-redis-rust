@@ -39,7 +39,9 @@ pub async fn start_replication(
 
     if replies.len() == 1 {
         // the reply to psync did not contain the rdb file, read it separately
-        let _rdb_file = read_from_leader(&mut stream).await.context("replication rdb file")?;
+        let _rdb_file = read_from_leader(&mut stream)
+            .await
+            .context("replication rdb file")?;
     }
 
     loop {
