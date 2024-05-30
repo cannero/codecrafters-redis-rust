@@ -73,7 +73,6 @@ impl MessageHandler {
                 Ok(vec![
                     Message::SimpleString(format!("FULLRESYNC {} 0", self.state.master_replid)),
                     Self::get_rdb_file(),
-                    // Command::get_replconf_command("GETACK", "*"),
                 ])
             }
         }

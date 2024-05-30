@@ -14,16 +14,21 @@ use super::distribute_message;
 pub struct ReplicationHandler {
     db: Arc<Db>,
     sender: Sender<Message>,
+    bytes_acknowledged: i64,
 }
 
 impl ReplicationHandler {
     pub fn new(db: Arc<Db>, sender: Sender<Message>) -> Self {
-        Self { db, sender }
+        Self { db, sender, bytes_acknowledged: 0 }
     }
 
     pub async fn handle(&mut self, message: &Message) -> Result<Option<Message>> {
+        let previously_acknowledged = self.bytes_acknowledged;
+        self.bytes_acknowledged += message.to_data().len() as i64;
+
         let command = parse_command(message)?;
         match command {
+            Command::Ping => Ok(None),
             Command::Set {
                 ref key,
                 ref value,
@@ -38,10 +43,9 @@ impl ReplicationHandler {
                     bail!("Only GETACK implemented for repl");
                 }
 
-                Ok(Some(Command::get_replconf_command("ACK", 0)))
+                Ok(Some(Command::get_replconf_command("ACK", previously_acknowledged)))
             }
-            Command::Ping
-            | Command::Echo(_)
+            Command::Echo(_)
             | Command::Get { .. }
             | Command::Info { .. }
             | Command::Psync => bail!("wrong command for replication {}", command.to_message()),
@@ -98,6 +102,15 @@ mod tests {
         (handler, rx)
     }
 
+    async fn assert_ack_with_bytes(handler: &mut ReplicationHandler, count: i64) -> Result<()> {
+        let replmessage = Command::get_replconf_command("GETACK", "*");
+        let expected_return = Some(Command::get_replconf_command("ACK", count));
+
+        assert_eq!(expected_return, handler.handle(&replmessage).await?);
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_set_does_broadcast() {
         let (mut handler, mut rx) = create_handler_and_recx();
@@ -112,13 +125,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ackget_returns_message() -> Result<()> {
+    async fn test_getack_returns_message_zero_bytes() -> Result<()> {
         let (mut handler, _rx) = create_handler_and_recx();
-        let replmessage = Command::get_replconf_command("GETACK", "*");
-        let expected_return = Some(Command::get_replconf_command("ACK", 0));
 
-        assert_eq!(expected_return, handler.handle(&replmessage).await?);
+        assert_ack_with_bytes(&mut handler, 0).await
+    }
 
-        Ok(())
+    #[tokio::test]
+    async fn test_getack_after_ping_sends_bytes() -> Result<()> {
+        let (mut handler, _rx) = create_handler_and_recx();
+
+        _ = handler.handle(&Command::get_ping_command()).await?;
+
+        assert_ack_with_bytes(&mut handler, 14).await?;
+
+        assert_ack_with_bytes(&mut handler, 51).await
     }
 }
