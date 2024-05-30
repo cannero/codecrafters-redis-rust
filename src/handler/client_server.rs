@@ -75,6 +75,7 @@ impl MessageHandler {
                     Self::get_rdb_file(),
                 ])
             }
+            Command::Wait => Ok(vec![Message::Integer(0)]),
         }
     }
 

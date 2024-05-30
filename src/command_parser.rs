@@ -22,6 +22,7 @@ pub enum Command {
         value: Message,
     },
     Psync,
+    Wait,
 }
 
 impl Command {
@@ -121,6 +122,7 @@ fn handle_array(messages: &[Message]) -> Result<Command> {
                 }
             }
             "PSYNC" => Ok(Command::Psync),
+            "WAIT" => Ok(Command::Wait),
             _ => bail!("unknown command {}", command_string),
         }
     } else {

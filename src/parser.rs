@@ -49,6 +49,7 @@ fn parse(mut data: BytesMut) -> Result<ParsedData> {
     match type_spec[0] {
         b'+' => parse_simple_string(data),
         b'$' => parse_bulk_string(data),
+        b':' => parse_integer(data),
         b'*' => parse_array(data),
         rest => Err(ParseError::UnknownMessage(rest as char)),
     }
@@ -78,7 +79,7 @@ fn parse_bulk_string(mut data: BytesMut) -> Result<ParsedData> {
                 Ok((Message::NullBulkString, data.split_off(4)))
             }
         }
-        _ => match get_size(data) {
+        _ => match read_number(data) {
             Ok((size, mut data)) => {
                 const REDIS_MAGIC: &[u8; 5] = b"REDIS";
                 if size > 5
@@ -100,8 +101,31 @@ fn parse_bulk_string(mut data: BytesMut) -> Result<ParsedData> {
     }
 }
 
+fn parse_integer(mut data: BytesMut) -> Result<ParsedData> {
+    let negative = if data[0] == b'-' {
+        data = data.split_off(1);
+        true
+    } else if data[0] == b'+' {
+        data = data.split_off(1);
+        false
+    } else {
+        false
+    };
+
+    match read_number(data){
+        Ok((num, rest)) => {
+            if negative {
+                Ok((Message::Integer(-(num as i64)), rest))
+            } else {
+                Ok((Message::Integer(num as i64), rest))
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
 fn parse_array(data: BytesMut) -> Result<ParsedData> {
-    match get_size(data) {
+    match read_number(data) {
         Ok((array_len, mut data)) => {
             let mut result = vec![];
             for _ in 0..array_len {
@@ -119,7 +143,7 @@ fn parse_array(data: BytesMut) -> Result<ParsedData> {
     }
 }
 
-fn get_size(mut data: BytesMut) -> Result<(usize, BytesMut)> {
+fn read_number(mut data: BytesMut) -> Result<(usize, BytesMut)> {
     match find_linebreak(&data[..]) {
         Some(pos) => match convert_to_number(&data[..pos]) {
             Ok(size) => Ok((size, data.split_off(pos + 2))),
@@ -263,6 +287,27 @@ mod tests {
         assert_eq!(
             parse_bulk_string(data),
             Ok((Message::NullBulkString, BytesMut::new()))
+        );
+    }
+
+    #[test]
+    fn test_integer() {
+        let data = str_to_bytes("-1939\r\n");
+        assert_eq!(
+            parse_integer(data),
+            Ok((Message::Integer(-1939), BytesMut::new()))
+        );
+
+        let data = str_to_bytes("1939\r\naab");
+        assert_eq!(
+            parse_integer(data),
+            Ok((Message::Integer(1939), BytesMut::from("aab")))
+        );
+
+        let data = str_to_bytes("+234\r\n");
+        assert_eq!(
+            parse_integer(data),
+            Ok((Message::Integer(234), BytesMut::new()))
         );
     }
 

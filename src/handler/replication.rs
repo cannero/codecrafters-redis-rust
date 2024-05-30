@@ -48,7 +48,8 @@ impl ReplicationHandler {
             Command::Echo(_)
             | Command::Get { .. }
             | Command::Info { .. }
-            | Command::Psync => bail!("wrong command for replication {}", command.to_message()),
+            | Command::Psync
+            | Command::Wait => bail!("wrong command for replication {}", command.to_message()),
         }
     }
 

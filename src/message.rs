@@ -6,6 +6,7 @@ pub enum Message {
     SimpleString(String),
     BulkString(String),
     NullBulkString,
+    Integer(i64),
     Array(Vec<Message>),
     RdbFile(Vec<u8>),
 }
@@ -14,17 +15,18 @@ impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             // Message::Null => write!(f, "null"),
-            Message::SimpleString(the_str) => write!(f, "simple string `{}`", the_str),
-            Message::BulkString(the_str) => write!(f, "bulk string `{}`", the_str),
+            Self::SimpleString(the_str) => write!(f, "simple string `{}`", the_str),
+            Self::BulkString(the_str) => write!(f, "bulk string `{}`", the_str),
             Self::NullBulkString => write!(f, "null bulk string"),
-            Message::Array(vec) => {
+            Self::Integer(the_int) => write!(f, "integer `{}`", the_int),
+            Self::Array(vec) => {
                 if vec.len() == 0 {
                     write!(f, "array with zero items")
                 } else {
                     write!(f, "array with `{}` items, first: `{}`", vec.len(), vec[0])
                 }
             }
-            Message::RdbFile(content) => write!(f, "rdb file, len {}", content.len()),
+            Self::RdbFile(content) => write!(f, "rdb file, len {}", content.len()),
         }
     }
 }
@@ -46,21 +48,27 @@ impl Message {
             // Message::Null => {
             //     vec![b'_', b'\r', b'\n']
             // }
-            Message::SimpleString(the_str) => {
+            Self::SimpleString(the_str) => {
                 let mut data = vec![b'+'];
                 data.extend_from_slice(the_str.as_bytes());
                 add_cr_nl(&mut data);
                 data
             }
-            Message::BulkString(the_str) => {
+            Self::BulkString(the_str) => {
                 let mut data = vec![b'$'];
                 add_len(the_str.len(), &mut data);
                 data.extend_from_slice(the_str.as_bytes());
                 add_cr_nl(&mut data);
                 data
             }
-            Message::NullBulkString => b"$-1\r\n".to_vec(),
-            Message::Array(arr) => {
+            Self::NullBulkString => b"$-1\r\n".to_vec(),
+            Self::Integer(the_int) => {
+                let mut data = vec![b':'];
+                data.extend(the_int.to_string().as_bytes());
+                add_cr_nl(&mut data);
+                data
+            }
+            Self::Array(arr) => {
                 let mut data = vec![b'*'];
                 add_len(arr.len(), &mut data);
                 for item in arr {
@@ -68,7 +76,7 @@ impl Message {
                 }
                 data
             }
-            Message::RdbFile(content) => {
+            Self::RdbFile(content) => {
                 let mut data = vec![b'$'];
                 add_len(content.len(), &mut data);
                 data.extend(content);
@@ -119,6 +127,14 @@ mod tests {
             Message::SimpleString("trello".to_string()),
         ]);
         let expected = create_vec("*2\r\n+hello\r\n+trello\r\n");
+
+        assert_eq!(expected, m.to_data());
+    }
+
+    #[test]
+    fn test_integer() {
+        let m = Message::Integer(-293);
+        let expected = create_vec(":-293\r\n");
 
         assert_eq!(expected, m.to_data());
     }
