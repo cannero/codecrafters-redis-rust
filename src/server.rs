@@ -17,6 +17,7 @@ struct ServerState {
     handler: MessageHandler,
     stream: TcpStream,
     sender: Option<Sender<Message>>,
+    config: Arc<ServerConfig>,
 }
 
 pub async fn start(config: Arc<ServerConfig>, db: Arc<Db>, tx: Sender<Message>) -> Result<()> {
@@ -29,6 +30,7 @@ pub async fn start(config: Arc<ServerConfig>, db: Arc<Db>, tx: Sender<Message>) 
                 println!("accepted new connection");
                 let db_cloned = db.clone();
                 let config_cloned = config.clone();
+                let config_cloned2 = config.clone();
                 let tx_cloned = tx.clone();
                 let o_tx_cloned2 = Some(tx.clone());
                 tokio::spawn(async move {
@@ -36,6 +38,7 @@ pub async fn start(config: Arc<ServerConfig>, db: Arc<Db>, tx: Sender<Message>) 
                         handler: MessageHandler::new(db_cloned, config_cloned, tx_cloned),
                         stream,
                         sender: o_tx_cloned2,
+                        config: config_cloned2,
                     };
                     handle_connection(state)
                         .await
@@ -64,7 +67,7 @@ async fn handle_connection(mut state: ServerState) -> Result<()> {
 
         for message in messages {
             println!("Received from client: {}", message);
-            let response = state.handler.handle(message).await?;
+            let response = state.handler.handle(&message).await?;
 
             for message in response {
                 println!("Responding: {}", message);
@@ -73,12 +76,15 @@ async fn handle_connection(mut state: ServerState) -> Result<()> {
         }
 
         if state.handler.replication_client_acknowleged() {
-            return handle_replication_client(state).await;
+            state.config.add_replication_client().await;
+            let res = handle_replication_client(&mut state).await;
+            state.config.remove_replication_client().await;
+            return res;
         }
     }
 }
 
-async fn handle_replication_client(mut state: ServerState) -> Result<()> {
+async fn handle_replication_client(state: &mut ServerState) -> Result<()> {
     println!("upgrading to replication");
     let sender = state.sender.take().expect("sender must be set");
     // TODO: check if this is the correct logic to not have any receiver open.

@@ -19,7 +19,11 @@ pub struct ReplicationHandler {
 
 impl ReplicationHandler {
     pub fn new(db: Arc<Db>, sender: Sender<Message>) -> Self {
-        Self { db, sender, bytes_acknowledged: 0 }
+        Self {
+            db,
+            sender,
+            bytes_acknowledged: 0,
+        }
     }
 
     pub async fn handle(&mut self, message: &Message) -> Result<Option<Message>> {
@@ -43,7 +47,10 @@ impl ReplicationHandler {
                     bail!("Only GETACK implemented for repl");
                 }
 
-                Ok(Some(Command::get_replconf_command("ACK", previously_acknowledged)))
+                Ok(Some(Command::get_replconf_command(
+                    "ACK",
+                    previously_acknowledged,
+                )))
             }
             Command::Echo(_)
             | Command::Get { .. }

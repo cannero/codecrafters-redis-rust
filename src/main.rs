@@ -3,7 +3,10 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use clap::Parser;
 use db::Db;
-use tokio::{net::ToSocketAddrs, sync::broadcast};
+use tokio::{
+    net::ToSocketAddrs,
+    sync::{broadcast, RwLock},
+};
 
 use crate::handler::replication::ReplicationHandler;
 
@@ -57,26 +60,51 @@ struct ServerConfig {
     master_replid: String,
     master_repl_offset: u32,
     listener_port: u16,
+    replication_clients: RwLock<u16>,
+}
+
+impl ServerConfig {
+    pub fn new(role: ServerRole, listener_port: u16) -> Self {
+        Self {
+            role,
+            master_replid: "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".to_string(),
+            master_repl_offset: 0,
+            listener_port,
+            replication_clients: RwLock::new(0),
+        }
+    }
+
+    pub async fn add_replication_client(&self) {
+        let mut count = self.replication_clients.write().await;
+        *count += 1;
+    }
+
+    pub async fn remove_replication_client(&self) {
+        let mut count = self.replication_clients.write().await;
+        assert!(*count > 1, "remove non-existing client");
+        *count -= 1;
+    }
+
+    pub async fn active_replication_clients(&self) -> u16 {
+        let count = self.replication_clients.read().await;
+        *count
+    }
 }
 
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
     let port = args.port;
+    let role = if args.replicaof.is_some() {
+        ServerRole::Follower
+    } else {
+        ServerRole::Leader
+    };
 
     println!("Using port {port}");
 
     let db = Arc::new(Db::new());
-    let config = Arc::new(ServerConfig {
-        role: if args.replicaof.is_some() {
-            ServerRole::Follower
-        } else {
-            ServerRole::Leader
-        },
-        master_replid: "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".to_string(),
-        master_repl_offset: 0,
-        listener_port: args.port,
-    });
+    let config = Arc::new(ServerConfig::new(role, args.port));
 
     let (tx, rx) = broadcast::channel(20);
     std::mem::drop(rx);

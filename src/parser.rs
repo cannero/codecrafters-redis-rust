@@ -112,7 +112,7 @@ fn parse_integer(mut data: BytesMut) -> Result<ParsedData> {
         false
     };
 
-    match read_number(data){
+    match read_number(data) {
         Ok((num, rest)) => {
             if negative {
                 Ok((Message::Integer(-(num as i64)), rest))

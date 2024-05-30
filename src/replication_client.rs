@@ -82,7 +82,11 @@ async fn get_reply(stream: &mut TcpStream) -> Result<Message> {
     Ok(res.swap_remove(0))
 }
 
-async fn handle_messages(repl_messages: &[Message], stream: &mut TcpStream, handler: &mut ReplicationHandler) -> Result<()> {
+async fn handle_messages(
+    repl_messages: &[Message],
+    stream: &mut TcpStream,
+    handler: &mut ReplicationHandler,
+) -> Result<()> {
     for message in repl_messages {
         if let Some(reply) = handler.handle(message).await? {
             send_message(reply, stream).await?;

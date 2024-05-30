@@ -35,7 +35,7 @@ impl MessageHandler {
     }
 
     // Handle incoming message and return the answer(s) to it.
-    pub async fn handle(&mut self, message: Message) -> Result<Vec<Message>> {
+    pub async fn handle(&mut self, message: &Message) -> Result<Vec<Message>> {
         let command = parse_command(&message)?;
         match command {
             Command::Ping => Ok(vec![Message::BulkString("PONG".to_string())]),
@@ -75,7 +75,9 @@ impl MessageHandler {
                     Self::get_rdb_file(),
                 ])
             }
-            Command::Wait => Ok(vec![Message::Integer(0)]),
+            Command::Wait => Ok(vec![Message::Integer(
+                self.state.active_replication_clients().await as i64,
+            )]),
         }
     }
 
@@ -112,22 +114,23 @@ mod tests {
     }
 
     fn create_handler_and_recx() -> (MessageHandler, Receiver<Message>) {
+        let (handler, rx, _) = create_handler_recx_and_state();
+        (handler, rx)
+    }
+
+    fn create_handler_recx_and_state() -> (MessageHandler, Receiver<Message>, Arc<ServerConfig>) {
         let db = Arc::new(Db::new());
-        let state = Arc::new(ServerConfig {
-            role: ServerRole::Leader,
-            master_replid: "2310921903".to_string(),
-            master_repl_offset: 0,
-            listener_port: 1234,
-        });
+        let state = Arc::new(ServerConfig::new(ServerRole::Leader, 1234));
+
         let (tx, rx) = broadcast::channel(1);
 
-        let handler = MessageHandler::new(db, state, tx);
-        (handler, rx)
+        let handler = MessageHandler::new(db, state.clone(), tx);
+        (handler, rx, state)
     }
 
     async fn handle_test(message: Message) -> Message {
         let mut handler = create_handler();
-        handler.handle(message).await.unwrap()[0].clone()
+        handler.handle(&message).await.unwrap()[0].clone()
     }
 
     #[tokio::test]
@@ -170,13 +173,13 @@ mod tests {
         let value = "value1";
         let (key, value, message_set) = get_set_command(key, value);
 
-        let result_set = handler.handle(message_set).await.unwrap();
+        let result_set = handler.handle(&message_set).await.unwrap();
 
         assert_eq!(Message::SimpleString("OK".to_string()), result_set[0]);
 
         let message_get = Message::Array(vec![Message::BulkString("GET".to_string()), key]);
 
-        let result_get = handler.handle(message_get).await.unwrap();
+        let result_get = handler.handle(&message_get).await.unwrap();
 
         assert_eq!(value, result_get[0]);
     }
@@ -190,7 +193,7 @@ mod tests {
         ];
 
         if let Message::BulkString(result) =
-            handler.handle(Message::Array(messages)).await.unwrap()[0].clone()
+            handler.handle(&Message::Array(messages)).await.unwrap()[0].clone()
         {
             assert!(result.contains("master_replid"));
         } else {
@@ -202,7 +205,7 @@ mod tests {
     async fn test_handle_psync() {
         let mut handler = create_handler();
         let result = handler
-            .handle(Command::get_psync_command("id", 123))
+            .handle(&Command::get_psync_command("id", 123))
             .await
             .unwrap();
         assert_eq!(2, result.len());
@@ -214,7 +217,7 @@ mod tests {
         std::mem::drop(rx);
         let (_, _, set_command) = get_set_command("keyyyy", "val");
 
-        let result = handler.handle(set_command).await.unwrap();
+        let result = handler.handle(&set_command).await.unwrap();
         assert_eq!(Message::SimpleString("OK".to_string()), result[0]);
     }
 
@@ -223,10 +226,26 @@ mod tests {
         let (mut handler, mut rx) = create_handler_and_recx();
         let (_, _, set_command) = get_set_command("keyyyy", "val");
 
-        let result = handler.handle(set_command.clone()).await.unwrap();
+        let result = handler.handle(&set_command).await.unwrap();
         assert_eq!(Message::SimpleString("OK".to_string()), result[0]);
 
         let message_recv = rx.recv().await.unwrap();
         assert_eq!(set_command, message_recv);
+    }
+
+    #[tokio::test]
+    async fn test_wait_reply() -> Result<()> {
+        let (mut handler, _, state) = create_handler_recx_and_state();
+        let wait_command = Command::Wait.to_message();
+
+        let result = handler.handle(&wait_command).await?;
+        assert_eq!(Message::Integer(0), result[0]);
+
+        state.add_replication_client().await;
+
+        let result = handler.handle(&wait_command).await?;
+        assert_eq!(Message::Integer(1), result[0]);
+
+        Ok(())
     }
 }

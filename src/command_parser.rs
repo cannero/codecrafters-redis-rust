@@ -53,7 +53,7 @@ impl Command {
             Self::Replconf { .. } => unimplemented!(),
             Self::Psync => unimplemented!(),
             Self::Info { .. } => unimplemented!(),
-            Self::Wait => unimplemented!(),
+            Self::Wait => vec![Message::BulkString("WAIT".to_string())],
         };
 
         Message::Array(inner)
@@ -88,7 +88,9 @@ pub fn parse_command(message: &Message) -> Result<Command> {
 }
 
 fn handle_array(messages: &[Message]) -> Result<Command> {
-    let command_message = messages.first().context("at least one message must exist")?;
+    let command_message = messages
+        .first()
+        .context("at least one message must exist")?;
     if let Message::BulkString(command_string) = command_message {
         match command_string.to_uppercase().as_str() {
             "PING" => Ok(Command::Ping),
