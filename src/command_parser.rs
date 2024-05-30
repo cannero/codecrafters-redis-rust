@@ -28,12 +28,12 @@ pub enum Command {
 impl Command {
     pub fn to_message(&self) -> Message {
         let inner = match self {
-            Command::Ping => vec![Message::BulkString("PING".to_string())],
-            Command::Echo(message) => {
+            Self::Ping => vec![Message::BulkString("PING".to_string())],
+            Self::Echo(message) => {
                 vec![Message::BulkString("ECHO".to_string()), message.clone()]
             }
-            Command::Get { key } => vec![Message::BulkString("GET".to_string()), key.clone()],
-            Command::Set {
+            Self::Get { key } => vec![Message::BulkString("GET".to_string()), key.clone()],
+            Self::Set {
                 key,
                 value,
                 expire_time,
@@ -50,9 +50,10 @@ impl Command {
 
                 set_messages
             }
-            Command::Replconf { .. } => unimplemented!(),
-            Command::Psync => unimplemented!(),
-            Command::Info { sections: _ } => unimplemented!(),
+            Self::Replconf { .. } => unimplemented!(),
+            Self::Psync => unimplemented!(),
+            Self::Info { .. } => unimplemented!(),
+            Self::Wait => unimplemented!(),
         };
 
         Message::Array(inner)
