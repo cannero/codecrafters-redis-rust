@@ -21,7 +21,7 @@ impl ReplicationHandler {
         Self { db, sender }
     }
 
-    pub async fn handle(&mut self, message: Message) -> Result<Option<Message>> {
+    pub async fn handle(&mut self, message: &Message) -> Result<Option<Message>> {
         let command = parse_command(message)?;
         match command {
             Command::Set {
@@ -102,7 +102,7 @@ mod tests {
     async fn test_set_does_broadcast() {
         let (mut handler, mut rx) = create_handler_and_recx();
         let (_, _, message_set) = get_set_command("key", "value");
-        handler.handle(message_set.clone()).await.unwrap();
+        handler.handle(&message_set).await.unwrap();
 
         match timeout(Duration::from_millis(10), rx.recv()).await {
             Ok(Ok(msg)) => assert_eq!(msg, message_set),
@@ -117,7 +117,7 @@ mod tests {
         let replmessage = Command::get_replconf_command("GETACK", "*");
         let expected_return = Some(Command::get_replconf_command("ACK", 0));
 
-        assert_eq!(expected_return, handler.handle(replmessage).await?);
+        assert_eq!(expected_return, handler.handle(&replmessage).await?);
 
         Ok(())
     }

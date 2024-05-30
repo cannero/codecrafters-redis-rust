@@ -78,23 +78,23 @@ impl Command {
     }
 }
 
-pub fn parse_command(message: Message) -> Result<Command> {
+pub fn parse_command(message: &Message) -> Result<Command> {
     match message {
         Message::Array(vec) if vec.len() > 0 => handle_array(vec),
         _ => bail!("unknown message {} for command", message),
     }
 }
 
-fn handle_array(vec: Vec<Message>) -> Result<Command> {
-    let command_message = vec.first().context("at least one message must exist")?;
+fn handle_array(messages: &[Message]) -> Result<Command> {
+    let command_message = messages.first().context("at least one message must exist")?;
     if let Message::BulkString(command_string) = command_message {
         match command_string.to_uppercase().as_str() {
             "PING" => Ok(Command::Ping),
-            "ECHO" => Ok(Command::Echo(vec[1].clone())),
+            "ECHO" => Ok(Command::Echo(messages[1].clone())),
             "SET" => {
-                let key = vec[1].clone();
-                let value = vec[2].clone();
-                let expire_time = get_expire_time(&vec)?;
+                let key = messages[1].clone();
+                let value = messages[2].clone();
+                let expire_time = get_expire_time(messages)?;
                 Ok(Command::Set {
                     key,
                     value,
@@ -102,19 +102,19 @@ fn handle_array(vec: Vec<Message>) -> Result<Command> {
                 })
             }
             "GET" => Ok(Command::Get {
-                key: vec[1].clone(),
+                key: messages[1].clone(),
             }),
-            "INFO" => match vec.get(1) {
+            "INFO" => match messages.get(1) {
                 Some(ele) => Ok(Command::Info {
                     sections: vec![ele.clone()],
                 }),
                 None => Ok(Command::Info { sections: vec![] }),
             },
             "REPLCONF" => {
-                if let Message::BulkString(name) = vec[1].clone() {
+                if let Message::BulkString(name) = messages[1].clone() {
                     Ok(Command::Replconf {
                         name,
-                        value: vec[2].clone(),
+                        value: messages[2].clone(),
                     })
                 } else {
                     bail!("First part of replconf should be bulk string");
@@ -128,7 +128,7 @@ fn handle_array(vec: Vec<Message>) -> Result<Command> {
     }
 }
 
-fn get_expire_time(messages: &Vec<Message>) -> Result<Option<i64>> {
+fn get_expire_time(messages: &[Message]) -> Result<Option<i64>> {
     match messages.get(3) {
         Some(_) => {
             let time = messages[4].clone();
@@ -185,7 +185,7 @@ mod tests {
     }
 
     fn assert_command(expected_command: Command, message: Message) {
-        assert_eq!(expected_command, parse_command(message).unwrap())
+        assert_eq!(expected_command, parse_command(&message).unwrap())
     }
 
     #[test]

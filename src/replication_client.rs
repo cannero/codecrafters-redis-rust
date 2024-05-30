@@ -42,15 +42,13 @@ pub async fn start_replication(
         let _rdb_file = read_from_leader(&mut stream)
             .await
             .context("replication rdb file")?;
+    } else if replies.len() > 2 {
+        handle_messages(&replies[2..], &mut stream, &mut handler).await?;
     }
 
     loop {
         let repl_messages = read_from_leader(&mut stream).await?;
-        for message in repl_messages {
-            if let Some(reply) = handler.handle(message).await? {
-                send_message(reply, &mut stream).await?;
-            }
-        }
+        handle_messages(&repl_messages, &mut stream, &mut handler).await?;
     }
 }
 
@@ -82,4 +80,14 @@ async fn get_reply(stream: &mut TcpStream) -> Result<Message> {
     }
 
     Ok(res.swap_remove(0))
+}
+
+async fn handle_messages(repl_messages: &[Message], stream: &mut TcpStream, handler: &mut ReplicationHandler) -> Result<()> {
+    for message in repl_messages {
+        if let Some(reply) = handler.handle(message).await? {
+            send_message(reply, stream).await?;
+        }
+    }
+
+    Ok(())
 }

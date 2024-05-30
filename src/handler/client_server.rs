@@ -36,7 +36,7 @@ impl MessageHandler {
 
     // Handle incoming message and return the answer(s) to it.
     pub async fn handle(&mut self, message: Message) -> Result<Vec<Message>> {
-        let command = parse_command(message)?;
+        let command = parse_command(&message)?;
         match command {
             Command::Ping => Ok(vec![Message::BulkString("PONG".to_string())]),
             Command::Echo(message) => Ok(vec![message]),
