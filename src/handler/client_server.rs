@@ -93,11 +93,8 @@ impl MessageHandler {
 
     fn get_rdb_file() -> Message {
         let hex_string = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
-        let bytes = (0..hex_string.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&hex_string[i..i + 2], 16).expect("hex_string is invalid"))
-            .collect::<Vec<_>>();
-        Message::RdbFile(bytes)
+
+        Message::rdb_file_from_hex(hex_string)
     }
 }
 

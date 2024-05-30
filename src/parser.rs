@@ -9,7 +9,7 @@ use crate::message::Message;
 #[derive(Error, Debug, PartialEq)]
 pub enum ParseError {
     #[error(transparent)]
-    InvalidSimpleStringContent(#[from] FromUtf8Error),
+    InvalidStringContent(#[from] FromUtf8Error),
     #[error("not a valid string `{0:?}`")]
     InvalidString(Bytes),
     #[error("not a valid message `{0:?}`")]
@@ -80,6 +80,15 @@ fn parse_bulk_string(mut data: BytesMut) -> Result<ParsedData> {
         }
         _ => match get_size(data) {
             Ok((size, mut data)) => {
+                const REDIS_MAGIC: &[u8; 5] = b"REDIS";
+                if data.len() == size && &data[..5] == REDIS_MAGIC
+                {
+                    // bit of a hack to check for rdb file,
+                    // it must be the last message in a stream as there is no check
+                    // for the start of another message.
+                    return Ok((Message::RdbFile(data.to_vec()), BytesMut::new()));
+                }
+
                 let bulk_string = String::from_utf8(data[..size].to_vec())?;
                 Ok((Message::BulkString(bulk_string), data.split_off(size + 2)))
             }
@@ -303,5 +312,13 @@ mod tests {
                 ]),
             ]
         );
+    }
+
+    #[test]
+    fn test_parse_data_rdb_file() {
+        let rdb = Message::rdb_file_from_hex("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2");
+        let data = rdb.to_data();
+
+        assert_eq!(parse_data(BytesMut::from(&data[..])).unwrap()[0], rdb);
     }
 }

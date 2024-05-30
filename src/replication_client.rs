@@ -34,10 +34,13 @@ pub async fn start_replication(
     ReplicationHandler::check_replconf_reply(&reply).context("capa")?;
 
     send_message(Command::get_psync_command("?", -1), &mut stream).await?;
-    let reply = get_reply(&mut stream).await.context("psync")?;
-    ReplicationHandler::check_psync_reply(&reply)?;
+    let replies = read_from_leader(&mut stream).await.context("psync")?;
+    ReplicationHandler::check_psync_reply(&replies[0])?;
 
-    let _rdb_file = read_from_leader_raw(&mut stream).await.context("replication rdb file")?;
+    if replies.len() == 1 {
+        // the reply to psync did not contain the rdb file, read it separately
+        let _rdb_file = read_from_leader(&mut stream).await.context("replication rdb file")?;
+    }
 
     loop {
         let repl_messages = read_from_leader(&mut stream).await?;

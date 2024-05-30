@@ -76,6 +76,16 @@ impl Message {
             }
         }
     }
+
+    pub fn rdb_file_from_hex(hex_string: &str) -> Message {
+        assert!(hex_string.len() % 2 == 0, "hex string length must be even");
+
+        let bytes = (0..hex_string.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex_string[i..i + 2], 16).expect("hex_string is invalid"))
+            .collect::<Vec<_>>();
+        Message::RdbFile(bytes)
+    }
 }
 
 #[cfg(test)]
